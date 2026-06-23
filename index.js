@@ -1,1 +1,1 @@
-require('./dist/index.js');
+npx tsx src/index.ts

@@ -1,1 +1,1 @@
-web: node dist/index.js
+web: npx tsx src/index.ts

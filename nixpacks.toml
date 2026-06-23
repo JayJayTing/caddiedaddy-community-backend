@@ -1,5 +1,5 @@
-[phases.build]
-cmds = ["npm run build"]
+[phases.install]
+cmds = ["npm install", "npx prisma generate"]
 
 [start]
-cmd = "node dist/index.js"
+cmd = "npx tsx src/index.ts"
