@@ -13,8 +13,15 @@
 - [x] Email logout <!-- sync: auth.post('/logout', -->
 - [x] Phone OTP — send code <!-- sync: auth.post('/phone/send-otp', -->
 - [x] Phone OTP — verify code <!-- sync: auth.post('/verify-otp', -->
+  - [ ] Android — enable Phone Auth in [Firebase Console](https://console.firebase.google.com) → Authentication → Sign-in method
+  - [ ] Android — add SHA-1 fingerprint in Firebase project settings
+  - [ ] Supabase — configure SMS provider (Twilio / Vonage) in Auth → Providers → Phone
 - [ ] Apple OAuth — get redirect URL <!-- sync: auth.get('/apple/url', -->
 - [ ] Apple OAuth — exchange code for session <!-- sync: auth.post('/apple/callback', -->
+  - [ ] Apple — create App ID with "Sign In with Apple" capability in [Apple Developer Console](https://developer.apple.com/account)
+  - [ ] Apple — create a Services ID and register the Supabase callback URL
+  - [ ] Apple — generate a private key (.p8) for Sign In with Apple
+  - [ ] Supabase — add Apple client ID, team ID, key ID, and .p8 secret in Auth → Providers → Apple
 - [x] Google OAuth — get redirect URL <!-- sync: auth.get('/google/url', -->
 - [x] Google OAuth — exchange code for session <!-- sync: auth.post('/google/callback', -->
 - [x] Get current user profile (`/auth/me`) <!-- sync: auth.get('/me', -->
