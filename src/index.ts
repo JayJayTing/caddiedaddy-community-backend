@@ -15,8 +15,17 @@ const app = new Hono()
 
 // Middleware
 app.use('*', logger())
+const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+
 app.use('*', cors({
-  origin: ['http://localhost:3001', 'http://localhost:3000'],
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    ...allowedOrigins,
+  ],
   credentials: true,
 }))
 
