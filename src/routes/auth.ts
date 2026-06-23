@@ -51,12 +51,36 @@ async function ensureUserExists(
   return existing
 }
 
-// ── Phone OTP (existing) ──────────────────────────────────────────────────────
+// ── Phone OTP ─────────────────────────────────────────────────────────────────
 
+/**
+ * POST /auth/phone/send-otp
+ * Body: { phone, channel? }  — channel defaults to "sms"
+ * Sends a 6-digit OTP via SMS (or WhatsApp) using Supabase Auth.
+ */
+const sendOtpSchema = z.object({
+  phone:   z.string().min(1),
+  channel: z.enum(['sms', 'whatsapp']).default('sms'),
+})
+
+auth.post('/phone/send-otp', zValidator('json', sendOtpSchema), async (c) => {
+  const { phone, channel } = c.req.valid('json')
+
+  const { error } = await supabaseAdmin.auth.signInWithOtp({ phone, options: { channel } })
+  if (error) return c.json({ error: error.message }, 400)
+
+  return c.json({ ok: true })
+})
+
+/**
+ * POST /auth/verify-otp
+ * Body: { phone, token, type }
+ * Verifies OTP, syncs user to DB, returns session.
+ */
 const verifyOtpSchema = z.object({
   phone: z.string().min(1),
   token: z.string().min(1),
-  type: z.enum(['sms', 'whatsapp']),
+  type:  z.enum(['sms', 'whatsapp']),
 })
 
 auth.post('/verify-otp', zValidator('json', verifyOtpSchema), async (c) => {
@@ -64,8 +88,15 @@ auth.post('/verify-otp', zValidator('json', verifyOtpSchema), async (c) => {
 
   const { data, error } = await supabaseAdmin.auth.verifyOtp({ phone, token, type })
   if (error) return c.json({ error: error.message }, 400)
+  if (!data.user) return c.json({ error: 'Verification failed' }, 500)
 
-  return c.json({ session: data.session, user: data.user })
+  const user = await ensureUserExists(data.user.id, {
+    displayName: phone,
+    method: AuthMethod.phone,
+    credential: phone,
+  })
+
+  return c.json({ session: data.session, user })
 })
 
 // ── Email ─────────────────────────────────────────────────────────────────────
