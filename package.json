@@ -10,7 +10,8 @@
     "build": "prisma generate && tsup src/index.ts --format cjs --external @prisma/client --external .prisma",
     "postinstall": "prisma generate",
     "generate": "prisma generate",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "checklist:sync": "tsx --tsconfig tsconfig.json scripts/sync-checklist.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
