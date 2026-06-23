@@ -1,5 +1,6 @@
 [build]
 builder = "nixpacks"
+buildCommand = "npm run build"
 
 [deploy]
 startCommand = "node dist/index.js"
