@@ -11,7 +11,8 @@
     "postinstall": "prisma generate",
     "generate": "prisma generate",
     "db:push": "prisma db push",
-    "checklist:sync": "tsx --tsconfig tsconfig.json scripts/sync-checklist.ts"
+    "checklist:sync": "tsx --tsconfig tsconfig.json scripts/sync-checklist.ts",
+    "seed": "tsx --tsconfig tsconfig.json scripts/seed.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

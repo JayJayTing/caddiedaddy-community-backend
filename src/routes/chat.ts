@@ -1,0 +1,123 @@
+import { Hono } from 'hono'
+import { zValidator } from '@hono/zod-validator'
+import { z } from 'zod'
+import { prisma } from '../lib/prisma'
+import { authMiddleware } from '../middleware/auth'
+
+const chat = new Hono()
+
+// ── Shared selects ─────────────────────────────────────────────────────────────
+
+const participantUserSelect = {
+  id: true,
+  displayName: true,
+  avatarInitial: true,
+} as const
+
+const senderSelect = {
+  id: true,
+  displayName: true,
+  avatarInitial: true,
+} as const
+
+// ── GET /threads ───────────────────────────────────────────────────────────────
+
+chat.get('/', authMiddleware, async (c) => {
+  const { sub: userId } = c.get('user')
+
+  const data = await prisma.chatThread.findMany({
+    where: {
+      participants: {
+        some: { userId, leftAt: null },
+      },
+    },
+    include: {
+      participants: {
+        where: { leftAt: null },
+        include: { user: { select: participantUserSelect } },
+      },
+      messages: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: {
+          id: true,
+          text: true,
+          createdAt: true,
+          sender: { select: senderSelect },
+        },
+      },
+    },
+    orderBy: { lastMessageAt: 'desc' },
+  })
+
+  return c.json({ data })
+})
+
+// ── GET /threads/:id/messages ──────────────────────────────────────────────────
+
+const messagesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  offset: z.coerce.number().int().min(0).default(0),
+})
+
+chat.get('/:id/messages', authMiddleware, zValidator('query', messagesQuerySchema), async (c) => {
+  const { sub: userId } = c.get('user')
+  const threadId = c.req.param('id')
+  const { limit, offset } = c.req.valid('query')
+
+  // Verify participant
+  const participant = await prisma.threadParticipant.findUnique({
+    where: { threadId_userId: { threadId, userId } },
+  })
+  if (!participant || participant.leftAt !== null) {
+    return c.json({ error: 'Not a participant in this thread' }, 403)
+  }
+
+  const data = await prisma.message.findMany({
+    where: { threadId, deletedAt: null },
+    include: { sender: { select: senderSelect } },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    skip: offset,
+  })
+
+  return c.json({ data })
+})
+
+// ── POST /threads/:id/messages ─────────────────────────────────────────────────
+
+const sendMessageSchema = z.object({
+  text: z.string().min(1),
+})
+
+chat.post('/:id/messages', authMiddleware, zValidator('json', sendMessageSchema), async (c) => {
+  const { sub: userId } = c.get('user')
+  const threadId = c.req.param('id')
+  const { text } = c.req.valid('json')
+
+  // Verify participant
+  const participant = await prisma.threadParticipant.findUnique({
+    where: { threadId_userId: { threadId, userId } },
+  })
+  if (!participant || participant.leftAt !== null) {
+    return c.json({ error: 'Not a participant in this thread' }, 403)
+  }
+
+  const thread = await prisma.chatThread.findUnique({ where: { id: threadId } })
+  if (!thread) return c.json({ error: 'Thread not found' }, 404)
+
+  const [data] = await prisma.$transaction([
+    prisma.message.create({
+      data: { threadId, senderId: userId, text },
+      include: { sender: { select: senderSelect } },
+    }),
+    prisma.chatThread.update({
+      where: { id: threadId },
+      data: { lastMessageAt: new Date() },
+    }),
+  ])
+
+  return c.json({ data }, 201)
+})
+
+export default chat
