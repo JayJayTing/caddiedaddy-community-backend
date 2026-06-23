@@ -29,7 +29,7 @@ export const authMiddleware = createMiddleware<{
   }
 
   try {
-    const decoded = await verify(token, secret) as JwtPayload
+    const decoded = await verify(token, secret, 'HS256') as JwtPayload
     c.set('user', decoded)
     await next()
   } catch {
