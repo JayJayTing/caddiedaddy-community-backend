@@ -1,0 +1,619 @@
+// CaddieDaddy Community — Prisma Schema
+// Golf social + round-booking community platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================
+// ENUMS
+// ==================
+
+enum AuthMethod {
+  phone
+  email
+  apple
+  google
+}
+
+enum VenueType {
+  course
+  driving_range
+}
+
+enum RoundFormat {
+  stroke_play
+  stableford
+  best_ball
+  scramble
+}
+
+enum HandicapRequirement {
+  all
+  u10
+  u15
+  u20
+  u28
+}
+
+enum RoundVisibility {
+  public
+  community
+}
+
+enum RoundStatus {
+  open
+  full
+  cancelled
+  completed
+}
+
+enum ParticipantRole {
+  host
+  accepted
+  requested
+  declined
+  waitlisted
+}
+
+enum CommunityType {
+  mixed
+  mens_club
+  ladies_club
+  corporate
+  beginner
+}
+
+enum CommunityPrivacy {
+  public
+  invite_only
+  private
+}
+
+enum CommunityMemberRole {
+  admin
+  leader
+  member
+}
+
+enum CommunityMemberStatus {
+  active
+  invited
+  banned
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  expired
+  revoked
+}
+
+enum PostType {
+  round_report
+  seeking
+  tip
+  general
+  announcement
+}
+
+enum PostVisibility {
+  public
+  community
+}
+
+enum PostStatus {
+  active
+  removed
+  flagged
+}
+
+enum ConnectionStatus {
+  pending
+  accepted
+  declined
+  blocked
+}
+
+enum ThreadType {
+  dm
+  group
+}
+
+enum NotificationType {
+  round_request
+  round_accepted
+  community_invite
+  new_message
+  post_like
+  post_comment
+  round_reminder
+}
+
+enum NotificationTargetType {
+  round
+  community
+  post
+  thread
+}
+
+enum ModerationAction {
+  warn
+  kick
+  block
+  post_removed
+  post_flagged
+}
+
+// ==================
+// USERS
+// ==================
+
+model User {
+  id             String    @id @default(uuid())
+  displayName    String    @db.VarChar(80)
+  avatarUrl      String?
+  avatarInitial  String?   @db.Char(1)
+  bio            String?   @db.Text
+  locationText   String?   @db.VarChar(80)
+  homeCourseId   String?
+  homeCourse     Course?   @relation("UserHomeCourse", fields: [homeCourseId], references: [id])
+  handicapIndex  Decimal?  @db.Decimal(4, 1)
+  memberSince    DateTime? @db.Date
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  // Auth
+  authMethods    UserAuthMethod[]
+
+  // Rounds
+  hostedRounds         Round[]              @relation("RoundHost")
+  roundParticipations  RoundParticipant[]
+
+  // Communities
+  communityMemberships CommunityMember[]
+  createdCommunities   Community[]          @relation("CommunityCreator")
+  communityInvitesSent CommunityInvite[]    @relation("InviteSender")
+
+  // Posts & Social
+  posts          Post[]
+  postLikes      PostLike[]
+  comments       Comment[]
+
+  // Connections
+  connectionsInitiated UserConnection[]     @relation("ConnectionInitiator")
+  connectionsReceived  UserConnection[]     @relation("ConnectionRecipient")
+
+  // Chat
+  threadParticipations ThreadParticipant[]
+  messagesSent         Message[]
+
+  // Notifications
+  notifications        Notification[]
+  notificationPrefs    UserNotificationPref?
+
+  // Moderation
+  moderationActionsGiven  ModerationLog[]  @relation("Moderator")
+  moderationActionsTarget ModerationLog[]  @relation("ModTarget")
+
+  // Handicap history
+  handicapHistory HandicapHistory[]
+
+  @@index([homeCourseId])
+  @@index([deletedAt])
+}
+
+model UserAuthMethod {
+  id          String     @id @default(uuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  method      AuthMethod
+  credential  String     // phone number, email, or provider sub_id
+  verifiedAt  DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@unique([method, credential])
+  @@index([userId])
+}
+
+// ==================
+// COURSES
+// ==================
+
+model Course {
+  id            String   @id @default(uuid())
+  name          String   @db.VarChar(100)
+  locationText  String?  @db.VarChar(80)
+  district      String?  @db.VarChar(40)
+  city          String?  @db.VarChar(40)
+  country       String   @default("TW") @db.Char(2)
+  lat           Decimal? @db.Decimal(9, 6)
+  lng           Decimal? @db.Decimal(9, 6)
+  holeCount     Int      @default(18)
+  createdAt     DateTime @default(now())
+
+  // Relations
+  userHomeCourse        User[]            @relation("UserHomeCourse")
+  rounds                Round[]
+  communityHomeCourse   Community[]       @relation("CommunityHomeCourse")
+  postLocationCourse    Post[]
+  postScorecards        PostScorecard[]
+
+  @@index([name])
+}
+
+// ==================
+// ROUNDS
+// ==================
+
+model Round {
+  id                   String              @id @default(uuid())
+  hostUserId           String
+  hostUser             User                @relation("RoundHost", fields: [hostUserId], references: [id])
+  courseId             String
+  course               Course              @relation(fields: [courseId], references: [id])
+  date                 DateTime            @db.Date
+  teeTime              DateTime            @db.Time()
+  venueType            VenueType           @default(course)
+  format               RoundFormat
+  holes                Int                 @default(18)
+  totalSpots           Int
+  greenFeeCents        Int?                // NT$ × 100
+  handicapRequirement  HandicapRequirement @default(all)
+  visibility           RoundVisibility     @default(public)
+  communityId          String?
+  community            Community?          @relation(fields: [communityId], references: [id])
+  notes                String?             @db.Text
+  color1               String?             @db.VarChar(20)
+  color2               String?             @db.VarChar(20)
+  status               RoundStatus         @default(open)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  participants  RoundParticipant[]
+  postLinks     PostRoundLink[]
+
+  @@index([date, status])
+  @@index([hostUserId])
+  @@index([communityId])
+  @@index([courseId])
+}
+
+model RoundParticipant {
+  id        String          @id @default(uuid())
+  roundId   String
+  round     Round           @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User            @relation(fields: [userId], references: [id])
+  role      ParticipantRole
+  joinedAt  DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@unique([roundId, userId])
+  @@index([userId, role])
+  @@index([roundId, role])
+}
+
+// ==================
+// COMMUNITIES
+// ==================
+
+model Community {
+  id             String           @id @default(uuid())
+  creatorId      String
+  creator        User             @relation("CommunityCreator", fields: [creatorId], references: [id])
+  name           String           @db.VarChar(80)
+  type           CommunityType    @default(mixed)
+  homeCourseId   String?
+  homeCourse     Course?          @relation("CommunityHomeCourse", fields: [homeCourseId], references: [id])
+  privacy        CommunityPrivacy @default(public)
+  description    String?          @db.Text
+  color1         String?          @db.VarChar(20)
+  color2         String?          @db.VarChar(20)
+  logoUrl        String?
+  memberCount    Int              @default(1)
+  postCount      Int              @default(0)
+  roundCount     Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+
+  members        CommunityMember[]
+  invites        CommunityInvite[]
+  rounds         Round[]
+  postCommunities PostCommunity[]
+  chatThreads    ChatThread[]
+
+  @@index([creatorId])
+  @@index([homeCourseId])
+  @@index([deletedAt])
+}
+
+model CommunityMember {
+  id           String                @id @default(uuid())
+  communityId  String
+  community    Community             @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User                  @relation(fields: [userId], references: [id])
+  role         CommunityMemberRole   @default(member)
+  status       CommunityMemberStatus @default(active)
+  joinedAt     DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@unique([communityId, userId])
+  @@index([userId, status])
+  @@index([communityId, role])
+}
+
+model CommunityInvite {
+  id           String       @id @default(uuid())
+  communityId  String
+  community    Community    @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  inviterId    String
+  inviter      User         @relation("InviteSender", fields: [inviterId], references: [id])
+  inviteeEmail String?
+  inviteePhone String?
+  token        String       @unique @db.VarChar(64)
+  status       InviteStatus @default(pending)
+  expiresAt    DateTime
+  createdAt    DateTime     @default(now())
+
+  @@index([communityId])
+  @@index([token])
+}
+
+// ==================
+// POSTS
+// ==================
+
+model Post {
+  id                 String         @id @default(uuid())
+  authorId           String
+  author             User           @relation(fields: [authorId], references: [id])
+  type               PostType       @default(general)
+  body               String         @db.Text
+  locationText       String?        @db.VarChar(80)
+  locationCourseId   String?
+  locationCourse     Course?        @relation(fields: [locationCourseId], references: [id])
+  photoUrl           String?
+  visibility         PostVisibility @default(public)
+  isPinned           Boolean        @default(false)
+  isLfp              Boolean        @default(false)
+  lfpPlayersNeeded   Int?
+  likesCount         Int            @default(0)
+  commentsCount      Int            @default(0)
+  status             PostStatus     @default(active)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  deletedAt          DateTime?
+
+  communities    PostCommunity[]
+  scorecard      PostScorecard?
+  roundLinks     PostRoundLink[]
+  likes          PostLike[]
+  comments       Comment[]
+  moderationLogs ModerationLog[]
+
+  @@index([authorId])
+  @@index([createdAt(sort: Desc)])
+  @@index([status, deletedAt])
+}
+
+// Many-to-many: post belongs to one or more communities
+model PostCommunity {
+  postId       String
+  post         Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  communityId  String
+  community    Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@id([postId, communityId])
+  @@index([communityId])
+}
+
+model PostScorecard {
+  id          String   @id @default(uuid())
+  postId      String   @unique
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  courseId    String?
+  course      Course?  @relation(fields: [courseId], references: [id])
+  label       String   @db.VarChar(40)   // "Holes 1–9", "Full Round"
+  scores      Int[]                       // array of 9 or 18 scores
+  grossTotal  Int
+  holesPlayed Int
+  createdAt   DateTime @default(now())
+
+  @@index([courseId])
+}
+
+model PostRoundLink {
+  postId   String
+  post     Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  roundId  String
+  round    Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@id([postId, roundId])
+}
+
+model PostLike {
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([postId, userId])
+  @@index([userId])
+}
+
+model Comment {
+  id        String    @id @default(uuid())
+  postId    String
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id])
+  text      String    @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([postId, createdAt(sort: Asc)])
+  @@index([authorId])
+}
+
+// ==================
+// SOCIAL CONNECTIONS
+// ==================
+
+model UserConnection {
+  id            String           @id @default(uuid())
+  initiatorId   String
+  initiator     User             @relation("ConnectionInitiator", fields: [initiatorId], references: [id])
+  recipientId   String
+  recipient     User             @relation("ConnectionRecipient", fields: [recipientId], references: [id])
+  status        ConnectionStatus @default(pending)
+  initiatedAt   DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([initiatorId, recipientId])
+  @@index([recipientId, status])
+  @@index([initiatorId, status])
+}
+
+// ==================
+// CHAT
+// ==================
+
+model ChatThread {
+  id             String     @id @default(uuid())
+  type           ThreadType @default(dm)
+  communityId    String?
+  community      Community? @relation(fields: [communityId], references: [id])
+  name           String?    @db.VarChar(80)
+  lastMessageAt  DateTime?
+  createdAt      DateTime   @default(now())
+
+  participants  ThreadParticipant[]
+  messages      Message[]
+
+  @@index([lastMessageAt(sort: Desc)])
+  @@index([communityId])
+}
+
+model ThreadParticipant {
+  threadId    String
+  thread      ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+  lastReadAt  DateTime?
+  joinedAt    DateTime   @default(now())
+  leftAt      DateTime?
+  isMuted     Boolean    @default(false)
+
+  @@id([threadId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id        String     @id @default(uuid())
+  threadId  String
+  thread    ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User       @relation(fields: [senderId], references: [id])
+  text      String     @db.Text
+  createdAt DateTime   @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime?
+
+  @@index([threadId, createdAt(sort: Desc)])
+  @@index([senderId])
+}
+
+// ==================
+// NOTIFICATIONS
+// ==================
+
+model Notification {
+  id           String                  @id @default(uuid())
+  userId       String
+  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         NotificationType
+  title        String                  @db.VarChar(120)
+  body         String                  @db.Text
+  targetType   NotificationTargetType?
+  targetId     String?
+  readAt       DateTime?
+  createdAt    DateTime                @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, readAt])
+}
+
+model UserNotificationPref {
+  userId             String   @id
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roundsNearby       Boolean  @default(true)
+  communityActivity  Boolean  @default(true)
+  roundReminders     Boolean  @default(true)
+  newMessages        Boolean  @default(true)
+  updatedAt          DateTime @updatedAt
+}
+
+// ==================
+// ANNOUNCEMENTS
+// ==================
+
+model Announcement {
+  id          String    @id @default(uuid())
+  authorId    String
+  badge       String    @db.VarChar(40)   // "Announcement", "Rule Update", "Course Notice"
+  title       String    @db.VarChar(120)
+  body        String    @db.Text
+  publishedAt DateTime
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([publishedAt(sort: Desc)])
+  @@index([expiresAt])
+}
+
+// ==================
+// MODERATION
+// ==================
+
+model ModerationLog {
+  id             String           @id @default(uuid())
+  moderatorId    String
+  moderator      User             @relation("Moderator", fields: [moderatorId], references: [id])
+  communityId    String
+  community      Community        @relation(fields: [communityId], references: [id])
+  targetUserId   String
+  targetUser     User             @relation("ModTarget", fields: [targetUserId], references: [id])
+  action         ModerationAction
+  targetPostId   String?
+  targetPost     Post?            @relation(fields: [targetPostId], references: [id])
+  reason         String?          @db.Text
+  createdAt      DateTime         @default(now())
+
+  @@index([communityId, createdAt(sort: Desc)])
+  @@index([targetUserId])
+  @@index([moderatorId])
+}
+
+// ==================
+// HANDICAP HISTORY
+// ==================
+
+model HandicapHistory {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  handicapIndex  Decimal  @db.Decimal(4, 1)
+  recordedAt     DateTime @default(now())
+
+  @@index([userId, recordedAt(sort: Desc)])
+}
