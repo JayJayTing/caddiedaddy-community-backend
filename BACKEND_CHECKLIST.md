@@ -1,8 +1,8 @@
 # CaddieDaddy Community — Backend Implementation Checklist
 
 > Run `npm run checklist:sync` from the `backend/` directory to auto-update checkboxes.
-> **Last synced:** 2026-06-23 19:04:29 UTC
-> **Progress:** 7 / 59 routes implemented
+> **Last synced:** 2026-06-23 19:14:38 UTC
+> **Progress:** 7 / 62 routes implemented
 
 ---
 
@@ -11,7 +11,10 @@
 - [x] Email signup <!-- sync: auth.post('/signup', -->
 - [x] Email login <!-- sync: auth.post('/login', -->
 - [x] Email logout <!-- sync: auth.post('/logout', -->
+- [ ] Phone OTP — send code <!-- sync: auth.post('/phone/send-otp', -->
 - [x] Phone OTP — verify code <!-- sync: auth.post('/verify-otp', -->
+- [ ] Apple OAuth — get redirect URL <!-- sync: auth.get('/apple/url', -->
+- [ ] Apple OAuth — exchange code for session <!-- sync: auth.post('/apple/callback', -->
 - [x] Google OAuth — get redirect URL <!-- sync: auth.get('/google/url', -->
 - [x] Google OAuth — exchange code for session <!-- sync: auth.post('/google/callback', -->
 - [x] Get current user profile (`/auth/me`) <!-- sync: auth.get('/me', -->
