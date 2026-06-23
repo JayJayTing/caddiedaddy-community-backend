@@ -1,18 +1,32 @@
 {
-  "name": "backend",
+  "name": "caddiedaddy-community-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "CaddieDaddy Community API — Hono + TypeScript",
+  "main": "dist/index.js",
+  "type": "commonjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "build": "prisma generate && tsup src/index.ts --format cjs --dts --external @prisma/client --external .prisma",
+    "generate": "prisma generate",
+    "db:push": "prisma db push"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@hono/zod-validator": "^0.4.3",
+    "@supabase/supabase-js": "^2.49.4",
+    "hono": "^4.7.10",
+    "zod": "^3.19.1"
+  },
+  "devDependencies": {
+    "@prisma/client": "^7.8.0",
+    "@types/node": "^22.15.21",
+    "prisma": "^7.8.0",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "devDependencies": {
-    "@prisma/client": "^7.8.0",
-    "pg": "^8.22.0",
-    "prisma": "^7.8.0"
-  }
+  "license": "ISC"
 }

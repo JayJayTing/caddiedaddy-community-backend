@@ -328,6 +328,7 @@ model Community {
   rounds         Round[]
   postCommunities PostCommunity[]
   chatThreads    ChatThread[]
+  moderationLogs ModerationLog[]
 
   @@index([creatorId])
   @@index([homeCourseId])
