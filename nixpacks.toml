@@ -1,5 +1,8 @@
 [phases.setup]
 nixPkgs = ["nodejs_22"]
 
+[phases.build]
+cmds = ["npm run build"]
+
 [start]
 cmd = "node dist/index.js"
