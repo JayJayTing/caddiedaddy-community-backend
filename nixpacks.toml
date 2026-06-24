@@ -2,4 +2,4 @@
 nixPkgs = ["nodejs_22"]
 
 [start]
-cmd = "node index.js"
+cmd = "node dist/index.js"
