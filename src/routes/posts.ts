@@ -42,13 +42,11 @@ posts.get('/', zValidator('query', feedQuerySchema), async (c) => {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return c.json({ error: 'Authentication required for following feed' }, 401)
     }
-    // Lazily resolve — authMiddleware is not applied to keep route open for discover/community
-    // We import verify inline to avoid duplicating middleware logic
-    const { verify } = await import('hono/jwt')
-    const secret = process.env.SUPABASE_JWT_SECRET
-    if (!secret) return c.json({ error: 'Server configuration error' }, 500)
+    // authMiddleware is not applied to keep route open for discover/community,
+    // so verify the token inline using the shared Supabase JWKS verifier.
+    const { verifySupabaseToken } = await import('../lib/supabaseJwt')
     try {
-      const decoded = await verify(authHeader.slice(7), secret, 'HS256') as { sub: string }
+      const decoded = await verifySupabaseToken(authHeader.slice(7))
       const memberships = await prisma.communityMember.findMany({
         where: { userId: decoded.sub, status: 'active' },
         select: { communityId: true },

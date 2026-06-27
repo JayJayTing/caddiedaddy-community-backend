@@ -14,10 +14,23 @@
  * Idempotent: uses upsert/createMany with skipDuplicates throughout.
  */
 
+import 'dotenv/config'
 import { PrismaClient, RoundFormat, HandicapRequirement, RoundVisibility, RoundStatus, CommunityType, CommunityPrivacy, PostType, PostVisibility, ThreadType, ParticipantRole } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
+import { createHash } from 'node:crypto'
 
-const prisma = new PrismaClient()
+// Use the pooled connection (IPv4) for seeding; the direct host is IPv6-only.
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL ?? process.env.DIRECT_URL })
+const prisma = new PrismaClient({ adapter })
 const API_URL = process.env.SEED_API_URL ?? 'http://localhost:3000'
+
+// Deterministic slug -> valid UUID v5 (stable per slug) so seed ids and their
+// FK references resolve to the same uuid. Columns are uuid type in the DB.
+function uid(slug: string): string {
+  const h = createHash('sha1').update('caddiedaddy:' + slug).digest('hex')
+  const variant = ((parseInt(h.slice(16,18),16) & 0x3f) | 0x80).toString(16).padStart(2,'0')
+  return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-${variant}${h.slice(18,20)}-${h.slice(20,32)}`
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -157,28 +170,28 @@ async function main() {
 
   const courses = await Promise.all([
     prisma.course.upsert({
-      where: { id: 'course-sunrise-001' },
-      create: { id: 'course-sunrise-001', name: 'Sunrise Golf Club', locationText: 'Yangmei, Taoyuan', district: 'Yangmei', city: 'Taoyuan', holeCount: 18 },
+      where: { id: uid('course-sunrise-001') },
+      create: { id: uid('course-sunrise-001'), name: 'Sunrise Golf Club', locationText: 'Yangmei, Taoyuan', district: 'Yangmei', city: 'Taoyuan', holeCount: 18 },
       update: {},
     }),
     prisma.course.upsert({
-      where: { id: 'course-dragon-002' },
-      create: { id: 'course-dragon-002', name: 'Dragon Valley GC', locationText: 'Longtan, Taoyuan', district: 'Longtan', city: 'Taoyuan', holeCount: 18 },
+      where: { id: uid('course-dragon-002') },
+      create: { id: uid('course-dragon-002'), name: 'Dragon Valley GC', locationText: 'Longtan, Taoyuan', district: 'Longtan', city: 'Taoyuan', holeCount: 18 },
       update: {},
     }),
     prisma.course.upsert({
-      where: { id: 'course-breeze-003' },
-      create: { id: 'course-breeze-003', name: 'Breeze Links', locationText: 'Guanyin, Taoyuan', district: 'Guanyin', city: 'Taoyuan', holeCount: 9 },
+      where: { id: uid('course-breeze-003') },
+      create: { id: uid('course-breeze-003'), name: 'Breeze Links', locationText: 'Guanyin, Taoyuan', district: 'Guanyin', city: 'Taoyuan', holeCount: 9 },
       update: {},
     }),
     prisma.course.upsert({
-      where: { id: 'course-tianmu-004' },
-      create: { id: 'course-tianmu-004', name: 'Tianmu Golf Club', locationText: 'Tianmu, Taipei', district: 'Tianmu', city: 'Taipei', holeCount: 18 },
+      where: { id: uid('course-tianmu-004') },
+      create: { id: uid('course-tianmu-004'), name: 'Tianmu Golf Club', locationText: 'Tianmu, Taipei', district: 'Tianmu', city: 'Taipei', holeCount: 18 },
       update: {},
     }),
     prisma.course.upsert({
-      where: { id: 'course-yangmei-005' },
-      create: { id: 'course-yangmei-005', name: 'Yangmei Country Club', locationText: 'Yangmei, Taoyuan', district: 'Yangmei', city: 'Taoyuan', holeCount: 18 },
+      where: { id: uid('course-yangmei-005') },
+      create: { id: uid('course-yangmei-005'), name: 'Yangmei Country Club', locationText: 'Yangmei, Taoyuan', district: 'Yangmei', city: 'Taoyuan', holeCount: 18 },
       update: {},
     }),
   ])
@@ -190,9 +203,9 @@ async function main() {
   console.log('\nStep 4: Creating communities...')
 
   const comm1 = await prisma.community.upsert({
-    where: { id: 'comm-001' },
+    where: { id: uid('comm-001') },
     create: {
-      id: 'comm-001',
+      id: uid('comm-001'),
       creatorId: alexId,
       name: 'Yangmei Weekend Warriors',
       type: CommunityType.mixed,
@@ -206,9 +219,9 @@ async function main() {
   })
 
   const comm2 = await prisma.community.upsert({
-    where: { id: 'comm-002' },
+    where: { id: uid('comm-002') },
     create: {
-      id: 'comm-002',
+      id: uid('comm-002'),
       creatorId: sarahId,
       name: 'Sunrise Regulars',
       type: CommunityType.mixed,
@@ -222,9 +235,9 @@ async function main() {
   })
 
   const comm3 = await prisma.community.upsert({
-    where: { id: 'comm-003' },
+    where: { id: uid('comm-003') },
     create: {
-      id: 'comm-003',
+      id: uid('comm-003'),
       creatorId: mikeId,
       name: 'Taoyuan Weekenders',
       type: CommunityType.mixed,
@@ -238,9 +251,9 @@ async function main() {
   })
 
   const comm4 = await prisma.community.upsert({
-    where: { id: 'comm-004' },
+    where: { id: uid('comm-004') },
     create: {
-      id: 'comm-004',
+      id: uid('comm-004'),
       creatorId: jasonId,
       name: 'Corporate Golf Network TW',
       type: CommunityType.corporate,
@@ -254,9 +267,9 @@ async function main() {
   })
 
   const comm5 = await prisma.community.upsert({
-    where: { id: 'comm-005' },
+    where: { id: uid('comm-005') },
     create: {
-      id: 'comm-005',
+      id: uid('comm-005'),
       creatorId: kevinId,
       name: 'Beginner Friendly Golfers',
       type: CommunityType.beginner,
@@ -316,14 +329,14 @@ async function main() {
   const makeTime = (h: number, m = 0) => new Date(1970, 0, 1, h, m, 0)
 
   const roundDefs = [
-    { id: 'round-001', hostUserId: sarahId, courseId: 'course-dragon-002', date: addDays(today, 2), teeTime: makeTime(7, 0), format: RoundFormat.best_ball, holes: 18, totalSpots: 4, greenFeeCents: 280000, handicapRequirement: HandicapRequirement.u15, visibility: RoundVisibility.public, communityId: comm2.id, color1: '#CDD9E0', color2: '#7C96A3' },
-    { id: 'round-002', hostUserId: mikeId, courseId: 'course-yangmei-005', date: addDays(today, 2), teeTime: makeTime(9, 0), format: RoundFormat.stroke_play, holes: 18, totalSpots: 4, greenFeeCents: 220000, handicapRequirement: HandicapRequirement.all, visibility: RoundVisibility.public, communityId: null, color1: '#DAD0E5', color2: '#9984B2' },
-    { id: 'round-003', hostUserId: alexId, courseId: 'course-sunrise-001', date: addDays(today, 3), teeTime: makeTime(6, 30), format: RoundFormat.stroke_play, holes: 18, totalSpots: 4, greenFeeCents: 240000, handicapRequirement: HandicapRequirement.all, visibility: RoundVisibility.public, communityId: comm1.id, color1: '#C8D5BB', color2: '#8FA480' },
-    { id: 'round-004', hostUserId: jasonId, courseId: 'course-breeze-003', date: addDays(today, 3), teeTime: makeTime(9, 15), format: RoundFormat.stableford, holes: 9, totalSpots: 3, greenFeeCents: 120000, handicapRequirement: HandicapRequirement.u20, visibility: RoundVisibility.public, communityId: null, color1: '#F5D4C1', color2: '#D99A7A' },
-    { id: 'round-005', hostUserId: kevinId, courseId: 'course-tianmu-004', date: addDays(today, 4), teeTime: makeTime(5, 45), format: RoundFormat.stroke_play, holes: 18, totalSpots: 4, greenFeeCents: 260000, handicapRequirement: HandicapRequirement.all, visibility: RoundVisibility.public, communityId: null, color1: '#EBC6C8', color2: '#C4888C' },
-    { id: 'round-006', hostUserId: alexId, courseId: 'course-yangmei-005', date: addDays(today, 6), teeTime: makeTime(8, 0), format: RoundFormat.scramble, holes: 18, totalSpots: 4, greenFeeCents: 220000, handicapRequirement: HandicapRequirement.u20, visibility: RoundVisibility.community, communityId: comm1.id, color1: '#F4E3B6', color2: '#C9A848' },
-    { id: 'round-007', hostUserId: sarahId, courseId: 'course-dragon-002', date: addDays(today, 9), teeTime: makeTime(7, 30), format: RoundFormat.best_ball, holes: 18, totalSpots: 4, greenFeeCents: 280000, handicapRequirement: HandicapRequirement.u15, visibility: RoundVisibility.public, communityId: null, color1: '#CDD9E0', color2: '#7C96A3' },
-    { id: 'round-008', hostUserId: mikeId, courseId: 'course-sunrise-001', date: addDays(today, 10), teeTime: makeTime(6, 0), format: RoundFormat.stroke_play, holes: 18, totalSpots: 4, greenFeeCents: 240000, handicapRequirement: HandicapRequirement.all, visibility: RoundVisibility.public, communityId: comm2.id, color1: '#C8D5BB', color2: '#8FA480' },
+    { id: uid('round-001'), hostUserId: sarahId, courseId: uid('course-dragon-002'), date: addDays(today, 2), teeTime: makeTime(7, 0), format: RoundFormat.best_ball, holes: 18, totalSpots: 4, greenFeeCents: 280000, handicapRequirement: HandicapRequirement.u15, visibility: RoundVisibility.public, communityId: comm2.id, color1: '#CDD9E0', color2: '#7C96A3' },
+    { id: uid('round-002'), hostUserId: mikeId, courseId: uid('course-yangmei-005'), date: addDays(today, 2), teeTime: makeTime(9, 0), format: RoundFormat.stroke_play, holes: 18, totalSpots: 4, greenFeeCents: 220000, handicapRequirement: HandicapRequirement.all, visibility: RoundVisibility.public, communityId: null, color1: '#DAD0E5', color2: '#9984B2' },
+    { id: uid('round-003'), hostUserId: alexId, courseId: uid('course-sunrise-001'), date: addDays(today, 3), teeTime: makeTime(6, 30), format: RoundFormat.stroke_play, holes: 18, totalSpots: 4, greenFeeCents: 240000, handicapRequirement: HandicapRequirement.all, visibility: RoundVisibility.public, communityId: comm1.id, color1: '#C8D5BB', color2: '#8FA480' },
+    { id: uid('round-004'), hostUserId: jasonId, courseId: uid('course-breeze-003'), date: addDays(today, 3), teeTime: makeTime(9, 15), format: RoundFormat.stableford, holes: 9, totalSpots: 3, greenFeeCents: 120000, handicapRequirement: HandicapRequirement.u20, visibility: RoundVisibility.public, communityId: null, color1: '#F5D4C1', color2: '#D99A7A' },
+    { id: uid('round-005'), hostUserId: kevinId, courseId: uid('course-tianmu-004'), date: addDays(today, 4), teeTime: makeTime(5, 45), format: RoundFormat.stroke_play, holes: 18, totalSpots: 4, greenFeeCents: 260000, handicapRequirement: HandicapRequirement.all, visibility: RoundVisibility.public, communityId: null, color1: '#EBC6C8', color2: '#C4888C' },
+    { id: uid('round-006'), hostUserId: alexId, courseId: uid('course-yangmei-005'), date: addDays(today, 6), teeTime: makeTime(8, 0), format: RoundFormat.scramble, holes: 18, totalSpots: 4, greenFeeCents: 220000, handicapRequirement: HandicapRequirement.u20, visibility: RoundVisibility.community, communityId: comm1.id, color1: '#F4E3B6', color2: '#C9A848' },
+    { id: uid('round-007'), hostUserId: sarahId, courseId: uid('course-dragon-002'), date: addDays(today, 9), teeTime: makeTime(7, 30), format: RoundFormat.best_ball, holes: 18, totalSpots: 4, greenFeeCents: 280000, handicapRequirement: HandicapRequirement.u15, visibility: RoundVisibility.public, communityId: null, color1: '#CDD9E0', color2: '#7C96A3' },
+    { id: uid('round-008'), hostUserId: mikeId, courseId: uid('course-sunrise-001'), date: addDays(today, 10), teeTime: makeTime(6, 0), format: RoundFormat.stroke_play, holes: 18, totalSpots: 4, greenFeeCents: 240000, handicapRequirement: HandicapRequirement.all, visibility: RoundVisibility.public, communityId: comm2.id, color1: '#C8D5BB', color2: '#8FA480' },
   ]
 
   for (const r of roundDefs) {
@@ -359,11 +372,11 @@ async function main() {
 
   // Add some accepted participants
   const participantData = [
-    { roundId: 'round-001', userId: mikeId },
-    { roundId: 'round-003', userId: kevinId },
-    { roundId: 'round-006', userId: mikeId },
-    { roundId: 'round-006', userId: sarahId },
-    { roundId: 'round-008', userId: alexId },
+    { roundId: uid('round-001'), userId: mikeId },
+    { roundId: uid('round-003'), userId: kevinId },
+    { roundId: uid('round-006'), userId: mikeId },
+    { roundId: uid('round-006'), userId: sarahId },
+    { roundId: uid('round-008'), userId: alexId },
   ]
 
   for (const p of participantData) {
@@ -382,7 +395,7 @@ async function main() {
 
   const postDefs = [
     {
-      id: 'post-001',
+      id: uid('post-001'),
       authorId: jasonId,
       type: PostType.round_report,
       body: 'Shot my best 9 holes yet — 38 on the East course at Sunrise. Conditions were perfect this morning. The greens were lightning fast but I managed to two-putt most of them. Anyone up for a rematch next weekend?',
@@ -391,7 +404,7 @@ async function main() {
       communityIds: [comm2.id],
     },
     {
-      id: 'post-002',
+      id: uid('post-002'),
       authorId: kevinId,
       type: PostType.seeking,
       body: 'Looking for 2 more players for Dragon Valley GC this Sunday 7am. Best Ball format. HCP under 20 preferred. Green fee is NT$2,800. Reply here or DM me!',
@@ -402,7 +415,7 @@ async function main() {
       lfpPlayersNeeded: 2,
     },
     {
-      id: 'post-003',
+      id: uid('post-003'),
       authorId: sarahId,
       type: PostType.tip,
       body: 'Hot tip for Yangmei CC: the 14th hole plays 2 clubs longer than the yardage suggests due to the prevailing afternoon wind. Take extra club and aim left of the bunker. Saved me 3 strokes on my last round.',
@@ -411,7 +424,7 @@ async function main() {
       communityIds: [comm1.id, comm2.id],
     },
     {
-      id: 'post-004',
+      id: uid('post-004'),
       authorId: alexId,
       type: PostType.round_report,
       body: 'Great scramble with the Yangmei Weekend Warriors today! Shot 62 as a team on the full 18 at Yangmei CC. Kevin made an incredible 30-foot birdie putt on 17. Post-round cold beers were earned.',
@@ -420,7 +433,7 @@ async function main() {
       communityIds: [comm1.id],
     },
     {
-      id: 'post-005',
+      id: uid('post-005'),
       authorId: mikeId,
       type: PostType.general,
       body: 'Just booked tee times at Dragon Valley for the next three Saturdays. The new clubhouse renovation is finished and the facilities are amazing. Highly recommend checking it out.',
@@ -429,7 +442,7 @@ async function main() {
       communityIds: [comm3.id],
     },
     {
-      id: 'post-006',
+      id: uid('post-006'),
       authorId: jasonId,
       type: PostType.seeking,
       body: 'Need one more for a corporate round at Tianmu GC on Friday afternoon. Stableford format, HCP under 15. Client entertainment — professional demeanor required. DM if interested.',
@@ -470,14 +483,14 @@ async function main() {
 
   // Add some likes and comments
   const likes = [
-    { postId: 'post-001', userId: mikeId },
-    { postId: 'post-001', userId: sarahId },
-    { postId: 'post-001', userId: alexId },
-    { postId: 'post-003', userId: alexId },
-    { postId: 'post-003', userId: kevinId },
-    { postId: 'post-004', userId: sarahId },
-    { postId: 'post-004', userId: kevinId },
-    { postId: 'post-004', userId: jasonId },
+    { postId: uid('post-001'), userId: mikeId },
+    { postId: uid('post-001'), userId: sarahId },
+    { postId: uid('post-001'), userId: alexId },
+    { postId: uid('post-003'), userId: alexId },
+    { postId: uid('post-003'), userId: kevinId },
+    { postId: uid('post-004'), userId: sarahId },
+    { postId: uid('post-004'), userId: kevinId },
+    { postId: uid('post-004'), userId: jasonId },
   ]
 
   for (const l of likes) {
@@ -495,12 +508,12 @@ async function main() {
   }
 
   const comments = [
-    { postId: 'post-001', authorId: mikeId, text: 'Amazing! What was your score on the back 9?' },
-    { postId: 'post-001', authorId: sarahId, text: "Let's go next Saturday! I need a good warm-up before the club tournament." },
-    { postId: 'post-001', authorId: alexId, text: '38 is great on that course. Greens were tough last time I played there.' },
-    { postId: 'post-003', authorId: mikeId, text: 'This is gold, thank you! Always lost strokes on 14.' },
-    { postId: 'post-004', authorId: kevinId, text: "That putt was pure luck haha. But I'll take it! 🏌️" },
-    { postId: 'post-004', authorId: sarahId, text: "Great round everyone. Same time next week?" },
+    { postId: uid('post-001'), authorId: mikeId, text: 'Amazing! What was your score on the back 9?' },
+    { postId: uid('post-001'), authorId: sarahId, text: "Let's go next Saturday! I need a good warm-up before the club tournament." },
+    { postId: uid('post-001'), authorId: alexId, text: '38 is great on that course. Greens were tough last time I played there.' },
+    { postId: uid('post-003'), authorId: mikeId, text: 'This is gold, thank you! Always lost strokes on 14.' },
+    { postId: uid('post-004'), authorId: kevinId, text: "That putt was pure luck haha. But I'll take it! 🏌️" },
+    { postId: uid('post-004'), authorId: sarahId, text: "Great round everyone. Same time next week?" },
   ]
 
   for (const cmt of comments) {
@@ -521,7 +534,7 @@ async function main() {
 
   const threads = [
     {
-      id: 'thread-dm-alex-mike',
+      id: uid('thread-dm-alex-mike'),
       type: ThreadType.dm,
       name: null,
       participants: [alexId, mikeId],
@@ -532,7 +545,7 @@ async function main() {
       ],
     },
     {
-      id: 'thread-dm-alex-sarah',
+      id: uid('thread-dm-alex-sarah'),
       type: ThreadType.dm,
       name: null,
       participants: [alexId, sarahId],
@@ -542,7 +555,7 @@ async function main() {
       ],
     },
     {
-      id: 'thread-dm-jason-kevin',
+      id: uid('thread-dm-jason-kevin'),
       type: ThreadType.dm,
       name: null,
       participants: [jasonId, kevinId],
@@ -552,7 +565,7 @@ async function main() {
       ],
     },
     {
-      id: 'thread-group-yangmei',
+      id: uid('thread-group-yangmei'),
       type: ThreadType.group,
       name: 'Yangmei Weekend Warriors',
       communityId: comm1.id,
@@ -565,7 +578,7 @@ async function main() {
       ],
     },
     {
-      id: 'thread-group-sunrise',
+      id: uid('thread-group-sunrise'),
       type: ThreadType.group,
       name: 'Sunrise Regulars',
       communityId: comm2.id,
@@ -623,7 +636,7 @@ async function main() {
 
   const announcements = [
     {
-      id: 'ann-001',
+      id: uid('ann-001'),
       authorId: alexId,
       badge: 'Announcement',
       title: 'Summer Scramble Series starts July 5',
@@ -632,7 +645,7 @@ async function main() {
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     },
     {
-      id: 'ann-002',
+      id: uid('ann-002'),
       authorId: sarahId,
       badge: 'Rule Update',
       title: 'New local rule: preferred lies until July',
@@ -641,7 +654,7 @@ async function main() {
       expiresAt: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000),
     },
     {
-      id: 'ann-003',
+      id: uid('ann-003'),
       authorId: mikeId,
       badge: 'Course Notice',
       title: 'Dragon Valley holes 7–9 closed this weekend',

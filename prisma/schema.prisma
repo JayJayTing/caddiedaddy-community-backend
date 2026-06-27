@@ -154,71 +154,73 @@ enum ModerationAction {
 // ==================
 
 model User {
-  id             String    @id @default(uuid())
-  displayName    String    @db.VarChar(80)
-  avatarUrl      String?
-  avatarInitial  String?   @db.Char(1)
-  bio            String?   @db.Text
-  locationText   String?   @db.VarChar(80)
-  homeCourseId   String?
-  homeCourse     Course?   @relation("UserHomeCourse", fields: [homeCourseId], references: [id])
-  handicapIndex  Decimal?  @db.Decimal(4, 1)
-  memberSince    DateTime? @db.Date
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
+  id            String    @id @default(uuid())
+  displayName   String    @map("display_name") @db.VarChar(80)
+  avatarUrl     String?   @map("avatar_url")
+  avatarInitial String?   @map("avatar_initial") @db.Char(1)
+  bio           String?   @db.Text
+  locationText  String?   @map("location_text") @db.VarChar(80)
+  homeCourseId  String?   @map("home_course_id")
+  homeCourse    Course?   @relation("UserHomeCourse", fields: [homeCourseId], references: [id])
+  handicapIndex Decimal?  @map("handicap_index") @db.Decimal(4, 1)
+  memberSince   DateTime? @map("member_since") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
 
   // Auth
-  authMethods    UserAuthMethod[]
+  authMethods UserAuthMethod[]
 
   // Rounds
-  hostedRounds         Round[]              @relation("RoundHost")
-  roundParticipations  RoundParticipant[]
+  hostedRounds        Round[]            @relation("RoundHost")
+  roundParticipations RoundParticipant[]
 
   // Communities
   communityMemberships CommunityMember[]
-  createdCommunities   Community[]          @relation("CommunityCreator")
-  communityInvitesSent CommunityInvite[]    @relation("InviteSender")
+  createdCommunities   Community[]       @relation("CommunityCreator")
+  communityInvitesSent CommunityInvite[] @relation("InviteSender")
 
   // Posts & Social
-  posts          Post[]
-  postLikes      PostLike[]
-  comments       Comment[]
+  posts     Post[]
+  postLikes PostLike[]
+  comments  Comment[]
 
   // Connections
-  connectionsInitiated UserConnection[]     @relation("ConnectionInitiator")
-  connectionsReceived  UserConnection[]     @relation("ConnectionRecipient")
+  connectionsInitiated UserConnection[] @relation("ConnectionInitiator")
+  connectionsReceived  UserConnection[] @relation("ConnectionRecipient")
 
   // Chat
   threadParticipations ThreadParticipant[]
   messagesSent         Message[]
 
   // Notifications
-  notifications        Notification[]
-  notificationPrefs    UserNotificationPref?
+  notifications     Notification[]
+  notificationPrefs UserNotificationPref?
 
   // Moderation
-  moderationActionsGiven  ModerationLog[]  @relation("Moderator")
-  moderationActionsTarget ModerationLog[]  @relation("ModTarget")
+  moderationActionsGiven  ModerationLog[] @relation("Moderator")
+  moderationActionsTarget ModerationLog[] @relation("ModTarget")
 
   // Handicap history
   handicapHistory HandicapHistory[]
 
   @@index([homeCourseId])
   @@index([deletedAt])
+  @@map("users")
 }
 
 model UserAuthMethod {
-  id          String     @id @default(uuid())
-  userId      String
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  method      AuthMethod
-  credential  String     // phone number, email, or provider sub_id
-  verifiedAt  DateTime?
-  createdAt   DateTime   @default(now())
+  id         String     @id @default(uuid())
+  userId     String     @map("user_id")
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  method     AuthMethod
+  credential String // phone number, email, or provider sub_id
+  verifiedAt DateTime?  @map("verified_at")
+  createdAt  DateTime   @default(now()) @map("created_at")
 
   @@unique([method, credential])
   @@index([userId])
+  @@map("user_auth_methods")
 }
 
 // ==================
@@ -226,25 +228,26 @@ model UserAuthMethod {
 // ==================
 
 model Course {
-  id            String   @id @default(uuid())
-  name          String   @db.VarChar(100)
-  locationText  String?  @db.VarChar(80)
-  district      String?  @db.VarChar(40)
-  city          String?  @db.VarChar(40)
-  country       String   @default("TW") @db.Char(2)
-  lat           Decimal? @db.Decimal(9, 6)
-  lng           Decimal? @db.Decimal(9, 6)
-  holeCount     Int      @default(18)
-  createdAt     DateTime @default(now())
+  id           String   @id @default(uuid())
+  name         String   @db.VarChar(100)
+  locationText String?  @map("location_text") @db.VarChar(80)
+  district     String?  @db.VarChar(40)
+  city         String?  @db.VarChar(40)
+  country      String   @default("TW") @db.Char(2)
+  lat          Decimal? @db.Decimal(9, 6)
+  lng          Decimal? @db.Decimal(9, 6)
+  holeCount    Int      @default(18) @map("hole_count")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   // Relations
-  userHomeCourse        User[]            @relation("UserHomeCourse")
-  rounds                Round[]
-  communityHomeCourse   Community[]       @relation("CommunityHomeCourse")
-  postLocationCourse    Post[]
-  postScorecards        PostScorecard[]
+  userHomeCourse      User[]          @relation("UserHomeCourse")
+  rounds              Round[]
+  communityHomeCourse Community[]     @relation("CommunityHomeCourse")
+  postLocationCourse  Post[]
+  postScorecards      PostScorecard[]
 
   @@index([name])
+  @@map("courses")
 }
 
 // ==================
@@ -252,51 +255,53 @@ model Course {
 // ==================
 
 model Round {
-  id                   String              @id @default(uuid())
-  hostUserId           String
-  hostUser             User                @relation("RoundHost", fields: [hostUserId], references: [id])
-  courseId             String
-  course               Course              @relation(fields: [courseId], references: [id])
-  date                 DateTime            @db.Date
-  teeTime              DateTime            @db.Time()
-  venueType            VenueType           @default(course)
-  format               RoundFormat
-  holes                Int                 @default(18)
-  totalSpots           Int
-  greenFeeCents        Int?                // NT$ × 100
-  handicapRequirement  HandicapRequirement @default(all)
-  visibility           RoundVisibility     @default(public)
-  communityId          String?
-  community            Community?          @relation(fields: [communityId], references: [id])
-  notes                String?             @db.Text
-  color1               String?             @db.VarChar(20)
-  color2               String?             @db.VarChar(20)
-  status               RoundStatus         @default(open)
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
+  id                  String              @id @default(uuid())
+  hostUserId          String              @map("host_user_id")
+  hostUser            User                @relation("RoundHost", fields: [hostUserId], references: [id])
+  courseId            String              @map("course_id")
+  course              Course              @relation(fields: [courseId], references: [id])
+  date                DateTime            @db.Date
+  teeTime             DateTime            @map("tee_time") @db.Time()
+  venueType           VenueType           @default(course) @map("venue_type")
+  format              RoundFormat
+  holes               Int                 @default(18)
+  totalSpots          Int                 @map("total_spots")
+  greenFeeCents       Int?                @map("green_fee_cents") // NT$ × 100
+  handicapRequirement HandicapRequirement @default(all) @map("handicap_requirement")
+  visibility          RoundVisibility     @default(public)
+  communityId         String?             @map("community_id")
+  community           Community?          @relation(fields: [communityId], references: [id])
+  notes               String?             @db.Text
+  color1              String?             @db.VarChar(20)
+  color2              String?             @db.VarChar(20)
+  status              RoundStatus         @default(open)
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
 
-  participants  RoundParticipant[]
-  postLinks     PostRoundLink[]
+  participants RoundParticipant[]
+  postLinks    PostRoundLink[]
 
   @@index([date, status])
   @@index([hostUserId])
   @@index([communityId])
   @@index([courseId])
+  @@map("rounds")
 }
 
 model RoundParticipant {
   id        String          @id @default(uuid())
-  roundId   String
+  roundId   String          @map("round_id")
   round     Round           @relation(fields: [roundId], references: [id], onDelete: Cascade)
-  userId    String
+  userId    String          @map("user_id")
   user      User            @relation(fields: [userId], references: [id])
   role      ParticipantRole
-  joinedAt  DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  joinedAt  DateTime        @default(now()) @map("joined_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
 
   @@unique([roundId, userId])
   @@index([userId, role])
   @@index([roundId, role])
+  @@map("round_participants")
 }
 
 // ==================
@@ -304,68 +309,71 @@ model RoundParticipant {
 // ==================
 
 model Community {
-  id             String           @id @default(uuid())
-  creatorId      String
-  creator        User             @relation("CommunityCreator", fields: [creatorId], references: [id])
-  name           String           @db.VarChar(80)
-  type           CommunityType    @default(mixed)
-  homeCourseId   String?
-  homeCourse     Course?          @relation("CommunityHomeCourse", fields: [homeCourseId], references: [id])
-  privacy        CommunityPrivacy @default(public)
-  description    String?          @db.Text
-  color1         String?          @db.VarChar(20)
-  color2         String?          @db.VarChar(20)
-  logoUrl        String?
-  memberCount    Int              @default(1)
-  postCount      Int              @default(0)
-  roundCount     Int              @default(0)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  deletedAt      DateTime?
+  id           String           @id @default(uuid())
+  creatorId    String           @map("creator_id")
+  creator      User             @relation("CommunityCreator", fields: [creatorId], references: [id])
+  name         String           @db.VarChar(80)
+  type         CommunityType    @default(mixed)
+  homeCourseId String?          @map("home_course_id")
+  homeCourse   Course?          @relation("CommunityHomeCourse", fields: [homeCourseId], references: [id])
+  privacy      CommunityPrivacy @default(public)
+  description  String?          @db.Text
+  color1       String?          @db.VarChar(20)
+  color2       String?          @db.VarChar(20)
+  logoUrl      String?          @map("logo_url")
+  memberCount  Int              @default(1) @map("member_count")
+  postCount    Int              @default(0) @map("post_count")
+  roundCount   Int              @default(0) @map("round_count")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  deletedAt    DateTime?        @map("deleted_at")
 
-  members        CommunityMember[]
-  invites        CommunityInvite[]
-  rounds         Round[]
+  members         CommunityMember[]
+  invites         CommunityInvite[]
+  rounds          Round[]
   postCommunities PostCommunity[]
-  chatThreads    ChatThread[]
-  moderationLogs ModerationLog[]
+  chatThreads     ChatThread[]
+  moderationLogs  ModerationLog[]
 
   @@index([creatorId])
   @@index([homeCourseId])
   @@index([deletedAt])
+  @@map("communities")
 }
 
 model CommunityMember {
-  id           String                @id @default(uuid())
-  communityId  String
-  community    Community             @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  userId       String
-  user         User                  @relation(fields: [userId], references: [id])
-  role         CommunityMemberRole   @default(member)
-  status       CommunityMemberStatus @default(active)
-  joinedAt     DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  id          String                @id @default(uuid())
+  communityId String                @map("community_id")
+  community   Community             @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  userId      String                @map("user_id")
+  user        User                  @relation(fields: [userId], references: [id])
+  role        CommunityMemberRole   @default(member)
+  status      CommunityMemberStatus @default(active)
+  joinedAt    DateTime              @default(now()) @map("joined_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
 
   @@unique([communityId, userId])
   @@index([userId, status])
   @@index([communityId, role])
+  @@map("community_members")
 }
 
 model CommunityInvite {
   id           String       @id @default(uuid())
-  communityId  String
+  communityId  String       @map("community_id")
   community    Community    @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  inviterId    String
+  inviterId    String       @map("inviter_id")
   inviter      User         @relation("InviteSender", fields: [inviterId], references: [id])
-  inviteeEmail String?
-  inviteePhone String?
+  inviteeEmail String?      @map("invitee_email")
+  inviteePhone String?      @map("invitee_phone")
   token        String       @unique @db.VarChar(64)
   status       InviteStatus @default(pending)
-  expiresAt    DateTime
-  createdAt    DateTime     @default(now())
+  expiresAt    DateTime     @map("expires_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
 
   @@index([communityId])
   @@index([token])
+  @@map("community_invites")
 }
 
 // ==================
@@ -373,25 +381,25 @@ model CommunityInvite {
 // ==================
 
 model Post {
-  id                 String         @id @default(uuid())
-  authorId           String
-  author             User           @relation(fields: [authorId], references: [id])
-  type               PostType       @default(general)
-  body               String         @db.Text
-  locationText       String?        @db.VarChar(80)
-  locationCourseId   String?
-  locationCourse     Course?        @relation(fields: [locationCourseId], references: [id])
-  photoUrl           String?
-  visibility         PostVisibility @default(public)
-  isPinned           Boolean        @default(false)
-  isLfp              Boolean        @default(false)
-  lfpPlayersNeeded   Int?
-  likesCount         Int            @default(0)
-  commentsCount      Int            @default(0)
-  status             PostStatus     @default(active)
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  deletedAt          DateTime?
+  id               String         @id @default(uuid())
+  authorId         String         @map("author_id")
+  author           User           @relation(fields: [authorId], references: [id])
+  type             PostType       @default(general)
+  body             String         @db.Text
+  locationText     String?        @map("location_text") @db.VarChar(80)
+  locationCourseId String?        @map("location_course_id")
+  locationCourse   Course?        @relation(fields: [locationCourseId], references: [id])
+  photoUrl         String?        @map("photo_url")
+  visibility       PostVisibility @default(public)
+  isPinned         Boolean        @default(false) @map("is_pinned")
+  isLfp            Boolean        @default(false) @map("is_lfp")
+  lfpPlayersNeeded Int?           @map("lfp_players_needed")
+  likesCount       Int            @default(0) @map("likes_count")
+  commentsCount    Int            @default(0) @map("comments_count")
+  status           PostStatus     @default(active)
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  deletedAt        DateTime?      @map("deleted_at")
 
   communities    PostCommunity[]
   scorecard      PostScorecard?
@@ -403,67 +411,73 @@ model Post {
   @@index([authorId])
   @@index([createdAt(sort: Desc)])
   @@index([status, deletedAt])
+  @@map("posts")
 }
 
 // Many-to-many: post belongs to one or more communities
 model PostCommunity {
-  postId       String
-  post         Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  communityId  String
-  community    Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  postId      String    @map("post_id")
+  post        Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  communityId String    @map("community_id")
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
 
   @@id([postId, communityId])
   @@index([communityId])
+  @@map("post_communities")
 }
 
 model PostScorecard {
   id          String   @id @default(uuid())
-  postId      String   @unique
+  postId      String   @unique @map("post_id")
   post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  courseId    String?
+  courseId    String?  @map("course_id")
   course      Course?  @relation(fields: [courseId], references: [id])
-  label       String   @db.VarChar(40)   // "Holes 1–9", "Full Round"
-  scores      Int[]                       // array of 9 or 18 scores
-  grossTotal  Int
-  holesPlayed Int
-  createdAt   DateTime @default(now())
+  label       String   @db.VarChar(40) // "Holes 1–9", "Full Round"
+  scores      Int[] // array of 9 or 18 scores
+  grossTotal  Int      @map("gross_total")
+  holesPlayed Int      @map("holes_played")
+  createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([courseId])
+  @@map("post_scorecards")
 }
 
 model PostRoundLink {
-  postId   String
-  post     Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
-  roundId  String
-  round    Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  postId  String @map("post_id")
+  post    Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  roundId String @map("round_id")
+  round   Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
 
   @@id([postId, roundId])
+  @@map("post_round_links")
 }
 
 model PostLike {
-  postId    String
+  postId    String   @map("post_id")
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  userId    String
+  userId    String   @map("user_id")
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@id([postId, userId])
   @@index([userId])
+  @@map("post_likes")
 }
 
 model Comment {
   id        String    @id @default(uuid())
-  postId    String
+  postId    String    @map("post_id")
   post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  authorId  String
+  authorId  String    @map("author_id")
   author    User      @relation(fields: [authorId], references: [id])
   text      String    @db.Text
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
   @@index([postId, createdAt(sort: Asc)])
   @@index([authorId])
+  @@map("comments")
 }
 
 // ==================
@@ -471,18 +485,19 @@ model Comment {
 // ==================
 
 model UserConnection {
-  id            String           @id @default(uuid())
-  initiatorId   String
-  initiator     User             @relation("ConnectionInitiator", fields: [initiatorId], references: [id])
-  recipientId   String
-  recipient     User             @relation("ConnectionRecipient", fields: [recipientId], references: [id])
-  status        ConnectionStatus @default(pending)
-  initiatedAt   DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id          String           @id @default(uuid())
+  initiatorId String           @map("initiator_id")
+  initiator   User             @relation("ConnectionInitiator", fields: [initiatorId], references: [id])
+  recipientId String           @map("recipient_id")
+  recipient   User             @relation("ConnectionRecipient", fields: [recipientId], references: [id])
+  status      ConnectionStatus @default(pending)
+  initiatedAt DateTime         @default(now()) @map("initiated_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
 
   @@unique([initiatorId, recipientId])
   @@index([recipientId, status])
   @@index([initiatorId, status])
+  @@map("user_connections")
 }
 
 // ==================
@@ -490,48 +505,51 @@ model UserConnection {
 // ==================
 
 model ChatThread {
-  id             String     @id @default(uuid())
-  type           ThreadType @default(dm)
-  communityId    String?
-  community      Community? @relation(fields: [communityId], references: [id])
-  name           String?    @db.VarChar(80)
-  lastMessageAt  DateTime?
-  createdAt      DateTime   @default(now())
+  id            String     @id @default(uuid())
+  type          ThreadType @default(dm)
+  communityId   String?    @map("community_id")
+  community     Community? @relation(fields: [communityId], references: [id])
+  name          String?    @db.VarChar(80)
+  lastMessageAt DateTime?  @map("last_message_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
 
-  participants  ThreadParticipant[]
-  messages      Message[]
+  participants ThreadParticipant[]
+  messages     Message[]
 
   @@index([lastMessageAt(sort: Desc)])
   @@index([communityId])
+  @@map("chat_threads")
 }
 
 model ThreadParticipant {
-  threadId    String
-  thread      ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User       @relation(fields: [userId], references: [id])
-  lastReadAt  DateTime?
-  joinedAt    DateTime   @default(now())
-  leftAt      DateTime?
-  isMuted     Boolean    @default(false)
+  threadId   String     @map("thread_id")
+  thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId     String     @map("user_id")
+  user       User       @relation(fields: [userId], references: [id])
+  lastReadAt DateTime?  @map("last_read_at")
+  joinedAt   DateTime   @default(now()) @map("joined_at")
+  leftAt     DateTime?  @map("left_at")
+  isMuted    Boolean    @default(false) @map("is_muted")
 
   @@id([threadId, userId])
   @@index([userId])
+  @@map("thread_participants")
 }
 
 model Message {
   id        String     @id @default(uuid())
-  threadId  String
+  threadId  String     @map("thread_id")
   thread    ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  senderId  String
+  senderId  String     @map("sender_id")
   sender    User       @relation(fields: [senderId], references: [id])
   text      String     @db.Text
-  createdAt DateTime   @default(now())
-  editedAt  DateTime?
-  deletedAt DateTime?
+  createdAt DateTime   @default(now()) @map("created_at")
+  editedAt  DateTime?  @map("edited_at")
+  deletedAt DateTime?  @map("deleted_at")
 
   @@index([threadId, createdAt(sort: Desc)])
   @@index([senderId])
+  @@map("messages")
 }
 
 // ==================
@@ -539,29 +557,32 @@ model Message {
 // ==================
 
 model Notification {
-  id           String                  @id @default(uuid())
-  userId       String
-  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type         NotificationType
-  title        String                  @db.VarChar(120)
-  body         String                  @db.Text
-  targetType   NotificationTargetType?
-  targetId     String?
-  readAt       DateTime?
-  createdAt    DateTime                @default(now())
+  id         String                  @id @default(uuid())
+  userId     String                  @map("user_id")
+  user       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       NotificationType
+  title      String                  @db.VarChar(120)
+  body       String                  @db.Text
+  targetType NotificationTargetType? @map("target_type")
+  targetId   String?                 @map("target_id")
+  readAt     DateTime?               @map("read_at")
+  createdAt  DateTime                @default(now()) @map("created_at")
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([userId, readAt])
+  @@map("notifications")
 }
 
 model UserNotificationPref {
-  userId             String   @id
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  roundsNearby       Boolean  @default(true)
-  communityActivity  Boolean  @default(true)
-  roundReminders     Boolean  @default(true)
-  newMessages        Boolean  @default(true)
-  updatedAt          DateTime @updatedAt
+  userId            String   @id @map("user_id")
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roundsNearby      Boolean  @default(true) @map("rounds_nearby")
+  communityActivity Boolean  @default(true) @map("community_activity")
+  roundReminders    Boolean  @default(true) @map("round_reminders")
+  newMessages       Boolean  @default(true) @map("new_messages")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("user_notification_prefs")
 }
 
 // ==================
@@ -570,16 +591,17 @@ model UserNotificationPref {
 
 model Announcement {
   id          String    @id @default(uuid())
-  authorId    String
-  badge       String    @db.VarChar(40)   // "Announcement", "Rule Update", "Course Notice"
+  authorId    String    @map("author_id")
+  badge       String    @db.VarChar(40) // "Announcement", "Rule Update", "Course Notice"
   title       String    @db.VarChar(120)
   body        String    @db.Text
-  publishedAt DateTime
-  expiresAt   DateTime?
-  createdAt   DateTime  @default(now())
+  publishedAt DateTime  @map("published_at")
+  expiresAt   DateTime? @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
 
   @@index([publishedAt(sort: Desc)])
   @@index([expiresAt])
+  @@map("announcements")
 }
 
 // ==================
@@ -587,22 +609,23 @@ model Announcement {
 // ==================
 
 model ModerationLog {
-  id             String           @id @default(uuid())
-  moderatorId    String
-  moderator      User             @relation("Moderator", fields: [moderatorId], references: [id])
-  communityId    String
-  community      Community        @relation(fields: [communityId], references: [id])
-  targetUserId   String
-  targetUser     User             @relation("ModTarget", fields: [targetUserId], references: [id])
-  action         ModerationAction
-  targetPostId   String?
-  targetPost     Post?            @relation(fields: [targetPostId], references: [id])
-  reason         String?          @db.Text
-  createdAt      DateTime         @default(now())
+  id           String           @id @default(uuid())
+  moderatorId  String           @map("moderator_id")
+  moderator    User             @relation("Moderator", fields: [moderatorId], references: [id])
+  communityId  String           @map("community_id")
+  community    Community        @relation(fields: [communityId], references: [id])
+  targetUserId String           @map("target_user_id")
+  targetUser   User             @relation("ModTarget", fields: [targetUserId], references: [id])
+  action       ModerationAction
+  targetPostId String?          @map("target_post_id")
+  targetPost   Post?            @relation(fields: [targetPostId], references: [id])
+  reason       String?          @db.Text
+  createdAt    DateTime         @default(now()) @map("created_at")
 
   @@index([communityId, createdAt(sort: Desc)])
   @@index([targetUserId])
   @@index([moderatorId])
+  @@map("moderation_actions")
 }
 
 // ==================
@@ -610,11 +633,12 @@ model ModerationLog {
 // ==================
 
 model HandicapHistory {
-  id             String   @id @default(uuid())
-  userId         String
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  handicapIndex  Decimal  @db.Decimal(4, 1)
-  recordedAt     DateTime @default(now())
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  handicapIndex Decimal  @map("handicap_index") @db.Decimal(4, 1)
+  recordedAt    DateTime @default(now()) @map("recorded_at")
 
   @@index([userId, recordedAt(sort: Desc)])
+  @@map("handicap_history")
 }
