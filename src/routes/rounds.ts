@@ -21,6 +21,7 @@ const courseSelect = {
 } as const
 
 const participantSelect = {
+  id: true,
   userId: true,
   role: true,
 } as const

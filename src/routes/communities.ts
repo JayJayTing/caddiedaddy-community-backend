@@ -14,6 +14,26 @@ const creatorSelect = {
   avatarInitial: true,
 } as const
 
+// Full community detail (creator + home course + active members + counts). Reused
+// by GET /:id and the join/leave endpoints so they all return the same shape.
+function loadCommunityDetail(id: string) {
+  return prisma.community.findUnique({
+    where: { id },
+    include: {
+      creator: { select: creatorSelect },
+      homeCourse: { select: { id: true, name: true, locationText: true } },
+      members: {
+        where: { status: 'active' },
+        include: {
+          user: { select: { id: true, displayName: true, avatarInitial: true, handicapIndex: true } },
+        },
+        orderBy: { joinedAt: 'asc' },
+      },
+      _count: { select: { members: true, rounds: true } },
+    },
+  })
+}
+
 // ── GET /communities ───────────────────────────────────────────────────────────
 
 communities.get('/', async (c) => {
@@ -59,22 +79,9 @@ communities.get('/mine', authMiddleware, async (c) => {
 communities.get('/:id', async (c) => {
   const id = c.req.param('id')
 
-  const data = await prisma.community.findUnique({
-    where: { id },
-    include: {
-      creator: { select: creatorSelect },
-      homeCourse: { select: { id: true, name: true, locationText: true } },
-      members: {
-        where: { status: 'active' },
-        include: {
-          user: { select: { id: true, displayName: true, avatarInitial: true } },
-        },
-      },
-      _count: { select: { members: true, rounds: true } },
-    },
-  })
+  const data = await loadCommunityDetail(id)
 
-  if (!data) return c.json({ error: 'Community not found' }, 404)
+  if (!data || data.deletedAt) return c.json({ error: 'Community not found' }, 404)
 
   return c.json({ data })
 })
@@ -117,6 +124,80 @@ communities.post('/', authMiddleware, zValidator('json', createCommunitySchema),
   })
 
   return c.json({ data }, 201)
+})
+
+// ── POST /communities/:id/join ───────────────────────────────────────────────────
+
+communities.post('/:id/join', authMiddleware, async (c) => {
+  const { sub: userId } = c.get('user')
+  const id = c.req.param('id')
+
+  const community = await prisma.community.findUnique({
+    where: { id },
+    select: { id: true, privacy: true, deletedAt: true },
+  })
+  if (!community || community.deletedAt) return c.json({ error: 'Community not found' }, 404)
+  if (community.privacy === 'private') {
+    return c.json({ error: 'This community is private — you need an invite to join' }, 403)
+  }
+
+  const existing = await prisma.communityMember.findUnique({
+    where: { communityId_userId: { communityId: id, userId } },
+  })
+
+  // Idempotent: only mutate (and bump the denormalized count) when the user is not
+  // already an active member.
+  if (!existing) {
+    await prisma.$transaction([
+      prisma.communityMember.create({
+        data: { communityId: id, userId, role: 'member', status: 'active' },
+      }),
+      prisma.community.update({ where: { id }, data: { memberCount: { increment: 1 } } }),
+    ])
+  } else if (existing.status !== 'active') {
+    await prisma.$transaction([
+      prisma.communityMember.update({
+        where: { communityId_userId: { communityId: id, userId } },
+        data: { status: 'active' },
+      }),
+      prisma.community.update({ where: { id }, data: { memberCount: { increment: 1 } } }),
+    ])
+  }
+
+  const data = await loadCommunityDetail(id)
+  return c.json({ data })
+})
+
+// ── POST /communities/:id/leave ──────────────────────────────────────────────────
+
+communities.post('/:id/leave', authMiddleware, async (c) => {
+  const { sub: userId } = c.get('user')
+  const id = c.req.param('id')
+
+  const community = await prisma.community.findUnique({
+    where: { id },
+    select: { id: true, creatorId: true, deletedAt: true },
+  })
+  if (!community || community.deletedAt) return c.json({ error: 'Community not found' }, 404)
+  if (community.creatorId === userId) {
+    return c.json({ error: 'The creator cannot leave their own community' }, 400)
+  }
+
+  const existing = await prisma.communityMember.findUnique({
+    where: { communityId_userId: { communityId: id, userId } },
+  })
+
+  if (existing && existing.status === 'active') {
+    await prisma.$transaction([
+      prisma.communityMember.delete({
+        where: { communityId_userId: { communityId: id, userId } },
+      }),
+      prisma.community.update({ where: { id }, data: { memberCount: { decrement: 1 } } }),
+    ])
+  }
+
+  const data = await loadCommunityDetail(id)
+  return c.json({ data })
 })
 
 export default communities
