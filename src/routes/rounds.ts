@@ -213,4 +213,98 @@ rounds.post('/:id/join', authMiddleware, async (c) => {
   return c.json({ ok: true })
 })
 
+// ── PATCH /rounds/:id (host-only edit) ──────────────────────────────────────────
+
+const editRoundSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  teeTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  format: z.enum(['stroke_play', 'stableford', 'best_ball', 'scramble']).optional(),
+  holes: z.number().int().refine((n) => n === 9 || n === 18).optional(),
+  totalSpots: z.number().int().min(2).optional(),
+  greenFeeCents: z.number().int().nonnegative().nullable().optional(),
+  handicapRequirement: z.enum(['all', 'u10', 'u15', 'u20', 'u28']).optional(),
+  notes: z.string().nullable().optional(),
+})
+
+rounds.patch('/:id', authMiddleware, zValidator('json', editRoundSchema), async (c) => {
+  const { sub: userId } = c.get('user')
+  const id = c.req.param('id')
+  const body = c.req.valid('json')
+
+  const round = await prisma.round.findUnique({ where: { id } })
+  if (!round) return c.json({ error: 'Round not found' }, 404)
+  if (round.hostUserId !== userId) return c.json({ error: 'Only the host can edit this round' }, 403)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updateData: Record<string, any> = {}
+  if (body.date !== undefined) updateData.date = new Date(body.date)
+  if (body.teeTime !== undefined) {
+    const [hh, mm] = body.teeTime.split(':').map(Number)
+    const t = new Date('1970-01-01T00:00:00.000Z')
+    t.setUTCHours(hh, mm, 0, 0)
+    updateData.teeTime = t
+  }
+  if (body.format !== undefined) updateData.format = body.format
+  if (body.holes !== undefined) updateData.holes = body.holes
+  if (body.totalSpots !== undefined) updateData.totalSpots = body.totalSpots
+  if (body.greenFeeCents !== undefined) updateData.greenFeeCents = body.greenFeeCents
+  if (body.handicapRequirement !== undefined) updateData.handicapRequirement = body.handicapRequirement
+  if (body.notes !== undefined) updateData.notes = body.notes
+
+  const data = await prisma.round.update({
+    where: { id },
+    data: updateData,
+    include: {
+      hostUser: { select: hostUserSelect },
+      course: { select: courseSelect },
+      participants: { select: participantSelect },
+    },
+  })
+
+  return c.json({ data })
+})
+
+// ── DELETE /rounds/:id (host-only cancel) ───────────────────────────────────────
+
+rounds.delete('/:id', authMiddleware, async (c) => {
+  const { sub: userId } = c.get('user')
+  const id = c.req.param('id')
+
+  const round = await prisma.round.findUnique({ where: { id } })
+  if (!round) return c.json({ error: 'Round not found' }, 404)
+  if (round.hostUserId !== userId) return c.json({ error: 'Only the host can cancel this round' }, 403)
+
+  const data = await prisma.round.update({ where: { id }, data: { status: 'cancelled' } })
+  return c.json({ data })
+})
+
+// ── PATCH /rounds/:id/participants/:userId (host accept/decline/waitlist) ────────
+
+const participantRoleSchema = z.object({
+  role: z.enum(['accepted', 'declined', 'waitlisted']),
+})
+
+rounds.patch('/:id/participants/:userId', authMiddleware, zValidator('json', participantRoleSchema), async (c) => {
+  const { sub: hostId } = c.get('user')
+  const roundId = c.req.param('id')
+  const targetUserId = c.req.param('userId')
+  const { role } = c.req.valid('json')
+
+  const round = await prisma.round.findUnique({ where: { id: roundId } })
+  if (!round) return c.json({ error: 'Round not found' }, 404)
+  if (round.hostUserId !== hostId) return c.json({ error: 'Only the host can manage requests' }, 403)
+
+  const participant = await prisma.roundParticipant.findUnique({
+    where: { roundId_userId: { roundId, userId: targetUserId } },
+  })
+  if (!participant) return c.json({ error: 'Participant not found' }, 404)
+
+  const data = await prisma.roundParticipant.update({
+    where: { roundId_userId: { roundId, userId: targetUserId } },
+    data: { role },
+  })
+
+  return c.json({ data })
+})
+
 export default rounds
