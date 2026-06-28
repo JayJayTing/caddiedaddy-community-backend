@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
 import { authMiddleware } from '../middleware/auth'
+import { createNotification } from '../lib/notifications'
 
 const rounds = new Hono()
 
@@ -212,6 +213,20 @@ rounds.post('/:id/join', authMiddleware, async (c) => {
     data: { roundId, userId, role: 'requested' },
   })
 
+  // Notify the host of the new request.
+  const [joiner, course] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } }),
+    prisma.course.findUnique({ where: { id: round.courseId }, select: { name: true } }),
+  ])
+  await createNotification({
+    userId: round.hostUserId,
+    type: 'round_request',
+    title: 'New join request',
+    body: `${joiner?.displayName ?? 'Someone'} requested to join your round at ${course?.name ?? 'your course'}`,
+    targetType: 'round',
+    targetId: roundId,
+  })
+
   return c.json({ ok: true })
 })
 
@@ -305,6 +320,22 @@ rounds.patch('/:id/participants/:userId', authMiddleware, zValidator('json', par
     where: { roundId_userId: { roundId, userId: targetUserId } },
     data: { role },
   })
+
+  // Notify the requester when they're accepted.
+  if (role === 'accepted') {
+    const [host, course] = await Promise.all([
+      prisma.user.findUnique({ where: { id: hostId }, select: { displayName: true } }),
+      prisma.course.findUnique({ where: { id: round.courseId }, select: { name: true } }),
+    ])
+    await createNotification({
+      userId: targetUserId,
+      type: 'round_accepted',
+      title: 'Request accepted',
+      body: `${host?.displayName ?? 'The host'} accepted your request to join the round at ${course?.name ?? 'the course'}`,
+      targetType: 'round',
+      targetId: roundId,
+    })
+  }
 
   return c.json({ data })
 })

@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
 import { authMiddleware } from '../middleware/auth'
+import { createNotification } from '../lib/notifications'
 
 const posts = new Hono()
 
@@ -140,6 +141,23 @@ posts.post('/', authMiddleware, zValidator('json', createPostSchema), async (c) 
   return c.json({ data }, 201)
 })
 
+// ── GET /posts/:id ─────────────────────────────────────────────────────────────
+// Single post (for notification deep-links into PostDetailOverlay).
+
+posts.get('/:id', async (c) => {
+  const id = c.req.param('id')
+  const data = await prisma.post.findUnique({
+    where: { id },
+    include: {
+      author: { select: authorSelect },
+      communities: { select: { communityId: true, community: { select: { name: true } } } },
+      _count: { select: { likes: true, comments: true } },
+    },
+  })
+  if (!data || data.deletedAt) return c.json({ error: 'Post not found' }, 404)
+  return c.json({ data })
+})
+
 // ── POST /posts/:id/like ───────────────────────────────────────────────────────
 
 posts.post('/:id/like', authMiddleware, async (c) => {
@@ -174,6 +192,17 @@ posts.post('/:id/like', authMiddleware, async (c) => {
       }),
     ])
     const updated = await prisma.post.findUnique({ where: { id: postId }, select: { likesCount: true } })
+    if (post.authorId !== userId) {
+      const liker = await prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } })
+      await createNotification({
+        userId: post.authorId,
+        type: 'post_like',
+        title: 'New like',
+        body: `${liker?.displayName ?? 'Someone'} liked your post`,
+        targetType: 'post',
+        targetId: postId,
+      })
+    }
     return c.json({ liked: true, likesCount: updated?.likesCount ?? 0 })
   }
 })
@@ -202,6 +231,18 @@ posts.post('/:id/comments', authMiddleware, zValidator('json', createCommentSche
       data: { commentsCount: { increment: 1 } },
     }),
   ])
+
+  if (post.authorId !== userId) {
+    const commenter = await prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } })
+    await createNotification({
+      userId: post.authorId,
+      type: 'post_comment',
+      title: 'New comment',
+      body: `${commenter?.displayName ?? 'Someone'} commented on your post`,
+      targetType: 'post',
+      targetId: postId,
+    })
+  }
 
   return c.json({ data }, 201)
 })
