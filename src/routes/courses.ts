@@ -25,6 +25,8 @@ courses.get('/', zValidator('query', searchQuerySchema), async (c) => {
       district: true,
       city: true,
       holeCount: true,
+      lat: true,
+      lng: true,
     },
     take: 10,
   })

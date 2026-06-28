@@ -171,28 +171,28 @@ async function main() {
   const courses = await Promise.all([
     prisma.course.upsert({
       where: { id: uid('course-sunrise-001') },
-      create: { id: uid('course-sunrise-001'), name: 'Sunrise Golf Club', locationText: 'Yangmei, Taoyuan', district: 'Yangmei', city: 'Taoyuan', holeCount: 18 },
-      update: {},
+      create: { id: uid('course-sunrise-001'), name: 'Sunrise Golf Club', locationText: 'Yangmei, Taoyuan', district: 'Yangmei', city: 'Taoyuan', holeCount: 18, lat: 24.9230, lng: 121.1660 },
+      update: { lat: 24.9230, lng: 121.1660 },
     }),
     prisma.course.upsert({
       where: { id: uid('course-dragon-002') },
-      create: { id: uid('course-dragon-002'), name: 'Dragon Valley GC', locationText: 'Longtan, Taoyuan', district: 'Longtan', city: 'Taoyuan', holeCount: 18 },
-      update: {},
+      create: { id: uid('course-dragon-002'), name: 'Dragon Valley GC', locationText: 'Longtan, Taoyuan', district: 'Longtan', city: 'Taoyuan', holeCount: 18, lat: 24.8520, lng: 121.2160 },
+      update: { lat: 24.8520, lng: 121.2160 },
     }),
     prisma.course.upsert({
       where: { id: uid('course-breeze-003') },
-      create: { id: uid('course-breeze-003'), name: 'Breeze Links', locationText: 'Guanyin, Taoyuan', district: 'Guanyin', city: 'Taoyuan', holeCount: 9 },
-      update: {},
+      create: { id: uid('course-breeze-003'), name: 'Breeze Links', locationText: 'Guanyin, Taoyuan', district: 'Guanyin', city: 'Taoyuan', holeCount: 9, lat: 25.0330, lng: 121.0850 },
+      update: { lat: 25.0330, lng: 121.0850 },
     }),
     prisma.course.upsert({
       where: { id: uid('course-tianmu-004') },
-      create: { id: uid('course-tianmu-004'), name: 'Tianmu Golf Club', locationText: 'Tianmu, Taipei', district: 'Tianmu', city: 'Taipei', holeCount: 18 },
-      update: {},
+      create: { id: uid('course-tianmu-004'), name: 'Tianmu Golf Club', locationText: 'Tianmu, Taipei', district: 'Tianmu', city: 'Taipei', holeCount: 18, lat: 25.1180, lng: 121.5310 },
+      update: { lat: 25.1180, lng: 121.5310 },
     }),
     prisma.course.upsert({
       where: { id: uid('course-yangmei-005') },
-      create: { id: uid('course-yangmei-005'), name: 'Yangmei Country Club', locationText: 'Yangmei, Taoyuan', district: 'Yangmei', city: 'Taoyuan', holeCount: 18 },
-      update: {},
+      create: { id: uid('course-yangmei-005'), name: 'Yangmei Country Club', locationText: 'Yangmei, Taoyuan', district: 'Yangmei', city: 'Taoyuan', holeCount: 18, lat: 24.9080, lng: 121.1450 },
+      update: { lat: 24.9080, lng: 121.1450 },
     }),
   ])
 

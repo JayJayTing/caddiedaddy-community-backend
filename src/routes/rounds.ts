@@ -20,12 +20,15 @@ const courseSelect = {
   id: true,
   name: true,
   locationText: true,
+  lat: true,
+  lng: true,
 } as const
 
 const participantSelect = {
   id: true,
   userId: true,
   role: true,
+  user: { select: { id: true, displayName: true, avatarInitial: true, avatarUrl: true } },
 } as const
 
 // ── GET /rounds ────────────────────────────────────────────────────────────────
