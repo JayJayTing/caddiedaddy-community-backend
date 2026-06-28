@@ -12,6 +12,7 @@ const hostUserSelect = {
   id: true,
   displayName: true,
   avatarInitial: true,
+  avatarUrl: true,
 } as const
 
 const courseSelect = {
@@ -122,7 +123,7 @@ rounds.get('/:id', async (c) => {
           userId: true,
           role: true,
           joinedAt: true,
-          user: { select: { id: true, displayName: true, avatarInitial: true } },
+          user: { select: { id: true, displayName: true, avatarInitial: true, avatarUrl: true } },
         },
       },
     },

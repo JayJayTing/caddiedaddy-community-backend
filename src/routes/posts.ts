@@ -12,6 +12,7 @@ const authorSelect = {
   id: true,
   displayName: true,
   avatarInitial: true,
+  avatarUrl: true,
   locationText: true,
 } as const
 
@@ -19,6 +20,7 @@ const commentAuthorSelect = {
   id: true,
   displayName: true,
   avatarInitial: true,
+  avatarUrl: true,
 } as const
 
 // ── GET /posts ─────────────────────────────────────────────────────────────────
@@ -96,6 +98,7 @@ const createPostSchema = z.object({
   type: z.enum(['round_report', 'seeking', 'tip', 'general', 'announcement']),
   body: z.string().min(1),
   locationText: z.string().optional(),
+  photoUrl: z.string().url().optional(),
   visibility: z.enum(['public', 'community']),
   communityIds: z.array(z.string().uuid()).optional(),
   isLfp: z.boolean().optional(),
@@ -112,6 +115,7 @@ posts.post('/', authMiddleware, zValidator('json', createPostSchema), async (c) 
       type: body.type,
       body: body.body,
       locationText: body.locationText,
+      photoUrl: body.photoUrl,
       visibility: body.visibility,
       isLfp: body.isLfp ?? false,
       lfpPlayersNeeded: body.lfpPlayersNeeded,

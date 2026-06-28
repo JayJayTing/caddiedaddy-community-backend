@@ -12,12 +12,14 @@ const participantUserSelect = {
   id: true,
   displayName: true,
   avatarInitial: true,
+  avatarUrl: true,
 } as const
 
 const senderSelect = {
   id: true,
   displayName: true,
   avatarInitial: true,
+  avatarUrl: true,
 } as const
 
 // ── GET /threads ───────────────────────────────────────────────────────────────

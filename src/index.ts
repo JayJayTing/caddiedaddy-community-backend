@@ -11,6 +11,7 @@ import chatRoutes from './routes/chat'
 import userRoutes from './routes/users'
 import courseRoutes from './routes/courses'
 import announcementRoutes from './routes/announcements'
+import uploadRoutes from './routes/uploads'
 
 const app = new Hono()
 
@@ -42,6 +43,7 @@ app.route('/threads', chatRoutes)
 app.route('/users', userRoutes)
 app.route('/courses', courseRoutes)
 app.route('/announcements', announcementRoutes)
+app.route('/uploads', uploadRoutes)
 
 // 404 fallback
 app.notFound((c) => c.json({ error: 'Not found' }, 404))

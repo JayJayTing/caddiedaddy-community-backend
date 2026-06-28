@@ -12,6 +12,7 @@ const creatorSelect = {
   id: true,
   displayName: true,
   avatarInitial: true,
+  avatarUrl: true,
 } as const
 
 // Full community detail (creator + home course + active members + counts). Reused
@@ -25,7 +26,7 @@ function loadCommunityDetail(id: string) {
       members: {
         where: { status: 'active' },
         include: {
-          user: { select: { id: true, displayName: true, avatarInitial: true, handicapIndex: true } },
+          user: { select: { id: true, displayName: true, avatarInitial: true, avatarUrl: true, handicapIndex: true } },
         },
         orderBy: { joinedAt: 'asc' },
       },
