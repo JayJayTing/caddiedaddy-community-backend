@@ -120,4 +120,65 @@ chat.post('/:id/messages', authMiddleware, zValidator('json', sendMessageSchema)
   return c.json({ data }, 201)
 })
 
+// ── POST /threads (create or find a DM with another user) ───────────────────────
+
+const createDmSchema = z.object({
+  userId: z.string().uuid(),
+})
+
+chat.post('/', authMiddleware, zValidator('json', createDmSchema), async (c) => {
+  const { sub: userId } = c.get('user')
+  const { userId: targetId } = c.req.valid('json')
+
+  if (targetId === userId) return c.json({ error: 'Cannot DM yourself' }, 400)
+  const target = await prisma.user.findUnique({ where: { id: targetId } })
+  if (!target) return c.json({ error: 'User not found' }, 404)
+
+  const threadInclude = {
+    participants: { where: { leftAt: null }, include: { user: { select: participantUserSelect } } },
+  } as const
+
+  // Find an existing DM thread that both users are in.
+  const existing = await prisma.chatThread.findFirst({
+    where: {
+      type: 'dm',
+      AND: [
+        { participants: { some: { userId } } },
+        { participants: { some: { userId: targetId } } },
+      ],
+    },
+    include: threadInclude,
+  })
+  if (existing) return c.json({ data: existing })
+
+  const data = await prisma.chatThread.create({
+    data: {
+      type: 'dm',
+      participants: { create: [{ userId }, { userId: targetId }] },
+    },
+    include: threadInclude,
+  })
+
+  return c.json({ data }, 201)
+})
+
+// ── PATCH /threads/:id/read (mark thread read for current user) ──────────────────
+
+chat.patch('/:id/read', authMiddleware, async (c) => {
+  const { sub: userId } = c.get('user')
+  const threadId = c.req.param('id')
+
+  const participant = await prisma.threadParticipant.findUnique({
+    where: { threadId_userId: { threadId, userId } },
+  })
+  if (!participant) return c.json({ error: 'Not a participant in this thread' }, 403)
+
+  await prisma.threadParticipant.update({
+    where: { threadId_userId: { threadId, userId } },
+    data: { lastReadAt: new Date() },
+  })
+
+  return c.json({ ok: true })
+})
+
 export default chat
