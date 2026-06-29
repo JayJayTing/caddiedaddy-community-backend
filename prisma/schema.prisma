@@ -18,6 +18,7 @@ enum AuthMethod {
   email
   apple
   google
+  line
 }
 
 enum VenueType {

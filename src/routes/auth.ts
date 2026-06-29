@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { verify } from 'hono/jwt'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { supabaseAdmin } from '../lib/supabase'
@@ -348,6 +349,130 @@ auth.post('/oauth/sync', authMiddleware, async (c) => {
 
   const user = await prisma.user.findUnique({ where: { id: su.id }, select: meSelect })
   return c.json({ user })
+})
+
+// ── LINE Login ──────────────────────────────────────────────────────────────────
+
+const LINE_CHANNEL_ID = process.env.LINE_CHANNEL_ID
+const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET
+
+type LineIdToken = {
+  iss?: string
+  aud?: string | string[]
+  sub?: string
+  nonce?: string
+  name?: string
+  picture?: string
+  email?: string
+}
+
+// LINE signs id_tokens with the channel secret (HS256). verify() also checks exp.
+async function verifyLineIdToken(idToken: string, nonce: string): Promise<LineIdToken> {
+  if (!LINE_CHANNEL_SECRET || !LINE_CHANNEL_ID) throw new Error('LINE not configured')
+  const payload = (await verify(idToken, LINE_CHANNEL_SECRET, 'HS256')) as LineIdToken
+  const audOk = Array.isArray(payload.aud)
+    ? payload.aud.includes(LINE_CHANNEL_ID)
+    : payload.aud === LINE_CHANNEL_ID
+  if (payload.iss !== 'https://access.line.me') throw new Error('bad iss')
+  if (!audOk) throw new Error('bad aud')
+  if (payload.nonce !== nonce) throw new Error('bad nonce')
+  if (!payload.sub) throw new Error('no sub')
+  return payload
+}
+
+/**
+ * POST /auth/line/callback
+ * Body: { code, redirectUri, nonce }
+ *
+ * LINE isn't a native Supabase provider, so we run the OAuth dance ourselves:
+ * exchange the code → verify the id_token (HS256 channel secret + iss/aud/nonce)
+ * → map the LINE user id to a Supabase user (our DB is the mapping source of
+ * truth) → mint a Supabase session via an admin magic-link (no password needed).
+ */
+const lineCallbackSchema = z.object({
+  code: z.string().min(1),
+  redirectUri: z.string().url(),
+  nonce: z.string().min(1),
+})
+
+auth.post('/line/callback', zValidator('json', lineCallbackSchema), async (c) => {
+  const { code, redirectUri, nonce } = c.req.valid('json')
+  if (!LINE_CHANNEL_ID || !LINE_CHANNEL_SECRET) return c.json({ error: 'LINE 登入尚未設定' }, 500)
+
+  // 1. Exchange the authorization code for tokens.
+  const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri,
+      client_id: LINE_CHANNEL_ID,
+      client_secret: LINE_CHANNEL_SECRET,
+    }),
+  })
+  if (!tokenRes.ok) return c.json({ error: 'LINE 授權失敗，請再試一次。' }, 400)
+  const tokenJson = (await tokenRes.json()) as { id_token?: string }
+  if (!tokenJson.id_token) return c.json({ error: 'LINE 未回傳身分權杖' }, 400)
+
+  // 2. Verify the id_token + claims.
+  let claims: LineIdToken
+  try {
+    claims = await verifyLineIdToken(tokenJson.id_token, nonce)
+  } catch {
+    return c.json({ error: 'LINE 身分驗證失敗' }, 401)
+  }
+  const lineUserId = claims.sub as string
+  const displayName = claims.name ?? 'LINE 使用者'
+
+  // 3. Map the LINE user id → our user (our DB is the mapping source of truth).
+  const existing = await prisma.userAuthMethod.findUnique({
+    where: { method_credential: { method: AuthMethod.line, credential: lineUserId } },
+    select: { userId: true },
+  })
+
+  let supabaseUserId: string
+  let userEmail: string
+
+  if (existing) {
+    supabaseUserId = existing.userId
+    const { data } = await supabaseAdmin.auth.admin.getUserById(supabaseUserId)
+    userEmail = data.user?.email ?? `line_${lineUserId}@line.caddiedaddy.app`
+  } else {
+    userEmail = claims.email ?? `line_${lineUserId}@line.caddiedaddy.app`
+    const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+      email: userEmail,
+      email_confirm: true,
+      user_metadata: { full_name: displayName, line_user_id: lineUserId, provider: 'line' },
+    })
+    if (createErr || !created.user) {
+      return c.json({ error: '此 LINE 帳號的電子郵件已被其他帳號使用。' }, 409)
+    }
+    supabaseUserId = created.user.id
+  }
+
+  await ensureUserExists(supabaseUserId, {
+    displayName,
+    method: AuthMethod.line,
+    credential: lineUserId,
+  })
+
+  // 4. Mint a Supabase session without a password (admin magic-link → verify).
+  const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
+    type: 'magiclink',
+    email: userEmail,
+  })
+  const tokenHash = linkData?.properties?.hashed_token
+  if (linkErr || !tokenHash) return c.json({ error: '建立工作階段失敗' }, 500)
+
+  const { data: verifyData, error: verifyErr } = await supabaseAdmin.auth.verifyOtp({
+    type: 'magiclink',
+    token_hash: tokenHash,
+  })
+  if (verifyErr || !verifyData.session) return c.json({ error: '建立工作階段失敗' }, 500)
+
+  const user = await prisma.user.findUnique({ where: { id: supabaseUserId }, select: meSelect })
+  return c.json({ session: verifyData.session, user })
 })
 
 // ── Me ────────────────────────────────────────────────────────────────────────
