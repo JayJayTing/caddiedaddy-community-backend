@@ -26,6 +26,15 @@ enum VenueType {
   driving_range
 }
 
+// Moderation lifecycle for user-submitted golf locations (community-sourced
+// "Pickle Town" model): a submission lands as `pending`, an admin approves or
+// rejects it. Only `approved` courses are returned to consumers / shown on the map.
+enum CourseStatus {
+  pending
+  approved
+  rejected
+}
+
 enum RoundFormat {
   stroke_play
   stableford
@@ -295,6 +304,9 @@ model User {
   creditAccount   CreditAccount?
   creditPurchases CreditPurchase[]
 
+  // Course submissions (user-submitted golf locations awaiting/after moderation)
+  submittedCourses Course[] @relation("CourseSubmitter")
+
   @@index([homeCourseId])
   @@index([deletedAt])
   @@map("users")
@@ -328,9 +340,19 @@ model Course {
   lat          Decimal? @db.Decimal(9, 6)
   lng          Decimal? @db.Decimal(9, 6)
   holeCount    Int      @default(18) @map("hole_count")
-  // Google Maps Place ID — set when a course is created from a Google Places
-  // search (host flow). Unique so repeated picks of the same venue reuse one row.
-  googlePlaceId String? @unique @map("google_place_id") @db.VarChar(255)
+  venueType    VenueType @default(course) @map("venue_type")
+
+  // Community-sourced submission + moderation (see CourseStatus). Default is
+  // `approved` so existing seeded rows stay visible after `prisma db push`; the
+  // POST /courses submit path sets `pending` explicitly.
+  status          CourseStatus @default(approved)
+  coverPhotoUrl   String?      @map("cover_photo_url")
+  photos          String[]     @default([])
+  submittedById   String?      @map("submitted_by_id") @db.Uuid
+  submittedBy     User?        @relation("CourseSubmitter", fields: [submittedById], references: [id])
+  reviewedAt      DateTime?    @map("reviewed_at") @db.Timestamptz
+  rejectionReason String?      @map("rejection_reason") @db.Text
+
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   // Relations
@@ -342,6 +364,8 @@ model Course {
   venues              Venue[]
 
   @@index([name])
+  @@index([status])
+  @@index([submittedById])
   @@map("courses")
 }
 

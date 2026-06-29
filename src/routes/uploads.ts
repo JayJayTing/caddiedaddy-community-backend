@@ -60,6 +60,22 @@ uploads.post('/post', authMiddleware, async (c) => {
   }
 })
 
+// ── POST /uploads/course ───────────────────────────────────────────────────────
+// Uploads a course/venue photo and returns its URL; the client passes the url(s)
+// as coverPhotoUrl / photos when submitting a course (POST /courses). Keyed by the
+// submitting user since the course row doesn't exist yet (upload-then-create).
+
+uploads.post('/course', authMiddleware, async (c) => {
+  const { sub: userId } = c.get('user')
+  try {
+    const file = getFile(await c.req.parseBody())
+    const url = await uploadImage('courses', userId, file)
+    return c.json({ data: { url } })
+  } catch (e) {
+    return fail(c, e)
+  }
+})
+
 // ── POST /uploads/community/:id ────────────────────────────────────────────────
 // Uploads community art (creator or admin only) and returns the updated community.
 
