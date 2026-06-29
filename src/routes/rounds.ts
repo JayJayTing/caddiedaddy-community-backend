@@ -145,9 +145,12 @@ const createRoundSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   teeTime: z.string().regex(/^\d{2}:\d{2}$/),
   venueType: z.enum(['course', 'driving_range']),
-  format: z.enum(['stroke_play', 'stableford', 'best_ball', 'scramble']),
-  holes: z.number().int().refine((n) => n === 9 || n === 18),
-  totalSpots: z.number().int().min(2),
+  // Play format is no longer chosen by the host; stored as a default for now.
+  format: z.enum(['stroke_play', 'stableford', 'best_ball', 'scramble']).optional(),
+  // Holes only apply to a golf course. Driving ranges omit it (stored as the
+  // 18 default but never shown). Optional here; required for course venues below.
+  holes: z.number().int().refine((n) => n === 9 || n === 18).optional(),
+  totalSpots: z.number().int().min(2).max(10),
   greenFeeCents: z.number().int().nonnegative().optional(),
   handicapRequirement: z.enum(['all', 'u10', 'u15', 'u20', 'u28']).optional(),
   visibility: z.enum(['public', 'community']),
@@ -155,6 +158,12 @@ const createRoundSchema = z.object({
   notes: z.string().optional(),
   color1: z.string().optional(),
   color2: z.string().optional(),
+}).refine((d) => d.venueType === 'driving_range' || d.holes != null, {
+  message: 'holes is required for a golf course',
+  path: ['holes'],
+}).refine((d) => d.totalSpots <= (d.venueType === 'driving_range' ? 10 : 4), {
+  message: 'totalSpots exceeds the venue maximum (4 for a course, 10 for a range)',
+  path: ['totalSpots'],
 })
 
 rounds.post('/', authMiddleware, zValidator('json', createRoundSchema), async (c) => {
@@ -173,8 +182,8 @@ rounds.post('/', authMiddleware, zValidator('json', createRoundSchema), async (c
       date: new Date(body.date),
       teeTime: teeTimeDate,
       venueType: body.venueType,
-      format: body.format,
-      holes: body.holes,
+      format: body.format ?? 'stroke_play',
+      holes: body.venueType === 'driving_range' ? 18 : body.holes,
       totalSpots: body.totalSpots,
       greenFeeCents: body.greenFeeCents,
       handicapRequirement: body.handicapRequirement,
@@ -231,6 +240,70 @@ rounds.post('/:id/join', authMiddleware, async (c) => {
   })
 
   return c.json({ ok: true })
+})
+
+// ── POST /rounds/:id/invite (host fills an open spot directly) ───────────────────
+
+const inviteSchema = z.object({ userId: z.string().uuid() })
+
+rounds.post('/:id/invite', authMiddleware, zValidator('json', inviteSchema), async (c) => {
+  const { sub: hostId } = c.get('user')
+  const roundId = c.req.param('id')
+  const { userId: inviteeId } = c.req.valid('json')
+
+  const round = await prisma.round.findUnique({
+    where: { id: roundId },
+    include: { participants: { select: { role: true } } },
+  })
+  if (!round) return c.json({ error: '找不到球局' }, 404)
+  if (round.hostUserId !== hostId) return c.json({ error: '只有主辦者可以邀請球友' }, 403)
+  if (round.status !== 'open') return c.json({ error: '此球局目前不開放加入' }, 400)
+
+  const taken = round.participants.filter((p) => p.role === 'host' || p.role === 'accepted').length
+  if (taken >= round.totalSpots) return c.json({ error: '名額已滿' }, 400)
+
+  const invitee = await prisma.user.findUnique({ where: { id: inviteeId }, select: { id: true } })
+  if (!invitee) return c.json({ error: '找不到該使用者' }, 404)
+
+  // Host vouches for invitees, so they go straight in as 'accepted'. A prior
+  // request/decline for the same person is upgraded rather than duplicated.
+  const existing = await prisma.roundParticipant.findUnique({
+    where: { roundId_userId: { roundId, userId: inviteeId } },
+  })
+  if (existing && (existing.role === 'host' || existing.role === 'accepted')) {
+    return c.json({ error: '對方已經在這場球局中' }, 400)
+  }
+  if (existing) {
+    await prisma.roundParticipant.update({
+      where: { roundId_userId: { roundId, userId: inviteeId } },
+      data: { role: 'accepted' },
+    })
+  } else {
+    await prisma.roundParticipant.create({ data: { roundId, userId: inviteeId, role: 'accepted' } })
+  }
+
+  const [host, course] = await Promise.all([
+    prisma.user.findUnique({ where: { id: hostId }, select: { displayName: true } }),
+    prisma.course.findUnique({ where: { id: round.courseId }, select: { name: true } }),
+  ])
+  await createNotification({
+    userId: inviteeId,
+    type: 'round_accepted', // reuses the closest existing enum (invitee is now in the round)
+    title: '球局邀請',
+    body: `${host?.displayName ?? '主辦者'} 邀請你加入 ${course?.name ?? '球場'} 的球局`,
+    targetType: 'round',
+    targetId: roundId,
+  })
+
+  const data = await prisma.round.findUnique({
+    where: { id: roundId },
+    include: {
+      hostUser: { select: hostUserSelect },
+      course: { select: courseSelect },
+      participants: { select: participantSelect },
+    },
+  })
+  return c.json({ data })
 })
 
 // ── PATCH /rounds/:id (host-only edit) ──────────────────────────────────────────
