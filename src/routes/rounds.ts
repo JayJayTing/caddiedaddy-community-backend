@@ -328,6 +328,12 @@ rounds.patch('/:id', authMiddleware, zValidator('json', editRoundSchema), async 
   if (!round) return c.json({ error: '找不到球局' }, 404)
   if (round.hostUserId !== userId) return c.json({ error: '只有主辦者可以編輯此球局' }, 403)
 
+  // Snapshot date/tee-time so we can tell whether the *schedule* actually changed
+  // (vs. an edit that only touches spots/notes) — only a schedule change warrants
+  // pinging the players who already committed.
+  const prevDateIso = round.date.toISOString().slice(0, 10)
+  const prevTee = `${String(round.teeTime.getUTCHours()).padStart(2, '0')}:${String(round.teeTime.getUTCMinutes()).padStart(2, '0')}`
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateData: Record<string, any> = {}
   if (body.date !== undefined) updateData.date = new Date(body.date)
@@ -354,6 +360,28 @@ rounds.patch('/:id', authMiddleware, zValidator('json', editRoundSchema), async 
     },
   })
 
+  // If the date or tee-time moved, let everyone already in the round know.
+  const newDate = body.date ?? prevDateIso
+  const newTee = body.teeTime ?? prevTee
+  const scheduleChanged = newDate !== prevDateIso || newTee !== prevTee
+  if (scheduleChanged) {
+    const recipients = data.participants.filter(
+      (p) => p.userId !== data.hostUserId && (p.role === 'accepted' || p.role === 'waitlisted'),
+    )
+    await Promise.all(
+      recipients.map((p) =>
+        createNotification({
+          userId: p.userId,
+          type: 'round_reminder', // reuses the closest existing enum (a schedule alert)
+          title: '球局時間有異動',
+          body: `${data.course?.name ?? '球場'} 的球局已改至 ${newDate} ${newTee}`,
+          targetType: 'round',
+          targetId: id,
+        }),
+      ),
+    )
+  }
+
   return c.json({ data })
 })
 
@@ -363,11 +391,37 @@ rounds.delete('/:id', authMiddleware, async (c) => {
   const { sub: userId } = c.get('user')
   const id = c.req.param('id')
 
-  const round = await prisma.round.findUnique({ where: { id } })
+  const round = await prisma.round.findUnique({
+    where: { id },
+    include: {
+      course: { select: { name: true } },
+      participants: { select: { userId: true, role: true } },
+    },
+  })
   if (!round) return c.json({ error: '找不到球局' }, 404)
   if (round.hostUserId !== userId) return c.json({ error: '只有主辦者可以取消此球局' }, 403)
 
   const data = await prisma.round.update({ where: { id }, data: { status: 'cancelled' } })
+
+  // Tell everyone who joined or asked to join (not the host) that it's off.
+  const recipients = round.participants.filter(
+    (p) =>
+      p.userId !== round.hostUserId &&
+      (p.role === 'accepted' || p.role === 'requested' || p.role === 'waitlisted'),
+  )
+  await Promise.all(
+    recipients.map((p) =>
+      createNotification({
+        userId: p.userId,
+        type: 'round_reminder', // reuses the closest existing enum (a schedule alert)
+        title: '球局已取消',
+        body: `${round.course?.name ?? '球場'} 的球局已被主辦者取消`,
+        targetType: 'round',
+        targetId: id,
+      }),
+    ),
+  )
+
   return c.json({ data })
 })
 
