@@ -132,6 +132,9 @@ const bookBody = z.object({
   partySize: z.number().int().min(1).max(8).default(1),
   notes: z.string().max(500).optional(),
   payWithCredits: z.boolean().optional().default(false),
+  // Also open this tee time as a joinable social round (Booking.roundId link).
+  // Only honoured when the venue maps to a Course (a Round needs a courseId).
+  openAsRound: z.boolean().optional().default(false),
 })
 
 const bookingInclude = {
@@ -146,7 +149,7 @@ venues.post(
   async (c) => {
     const { sub: userId } = c.get('user')
     const slotId = c.req.param('slotId')
-    const { partySize, notes, payWithCredits } = c.req.valid('json')
+    const { partySize, notes, payWithCredits, openAsRound } = c.req.valid('json')
 
     const booking = await prisma.$transaction(async (tx) => {
       // Conditional UPDATE locks the row and guards capacity in one statement.
@@ -165,9 +168,10 @@ venues.post(
 
       const slot = await tx.bookingSlot.findUniqueOrThrow({
         where: { id: slotId },
-        include: { venue: { select: { commissionBps: true } } },
+        include: { venue: { select: { commissionBps: true, courseId: true, type: true } } },
       })
 
+      let created
       // ── Credit booking (prepaid via wallet, discounted "deal" price) ──────────
       if (payWithCredits) {
         if (slot.creditPriceCents == null) {
@@ -176,7 +180,7 @@ venues.post(
         const unit = slot.creditPriceCents
         const total = unit * partySize
 
-        const created = await tx.booking.create({
+        created = await tx.booking.create({
           data: {
             venueId: slot.venueId,
             slotId: slot.id,
@@ -208,25 +212,54 @@ venues.post(
             status: 'accrued',
           },
         })
-
-        return created
+      } else {
+        // ── Cash booking (pay at venue) — unchanged behaviour ───────────────────
+        created = await tx.booking.create({
+          data: {
+            venueId: slot.venueId,
+            slotId: slot.id,
+            userId,
+            partySize,
+            unitPriceCents: slot.priceCents,
+            totalCents: slot.priceCents * partySize,
+            status: 'confirmed',
+            paymentStatus: 'none', // pay at venue
+            notes,
+          },
+          include: bookingInclude,
+        })
       }
 
-      // ── Cash booking (pay at venue) — unchanged behaviour ─────────────────────
-      return tx.booking.create({
-        data: {
-          venueId: slot.venueId,
-          slotId: slot.id,
-          userId,
-          partySize,
-          unitPriceCents: slot.priceCents,
-          totalCents: slot.priceCents * partySize,
-          status: 'confirmed',
-          paymentStatus: 'none', // pay at venue
-          notes,
-        },
-        include: bookingInclude,
-      })
+      // ── Optionally open this tee time as a joinable social round ──────────────
+      // A Round needs a courseId, so this only fires when the venue maps to a
+      // Course. The booking covers `partySize`; the round lets others fill the
+      // rest of the tee time socially (capacity reconciliation is out of scope).
+      if (openAsRound && slot.venue.courseId) {
+        const maxSpots = slot.venue.type === 'driving_range' ? 10 : 4
+        const round = await tx.round.create({
+          data: {
+            hostUserId: userId,
+            courseId: slot.venue.courseId,
+            date: slot.date,
+            teeTime: slot.startTime,
+            venueType: slot.venue.type,
+            format: 'stroke_play',
+            holes: slot.holes ?? 18,
+            totalSpots: Math.min(Math.max(slot.capacity, 2), maxSpots),
+            greenFeeCents: slot.priceCents,
+            handicapRequirement: 'all',
+            visibility: 'public',
+            participants: { create: { userId, role: 'host' } },
+          },
+        })
+        created = await tx.booking.update({
+          where: { id: created.id },
+          data: { roundId: round.id },
+          include: bookingInclude,
+        })
+      }
+
+      return created
     })
 
     return c.json({ data: booking }, 201)
