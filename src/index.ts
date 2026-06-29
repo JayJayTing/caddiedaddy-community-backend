@@ -3,6 +3,7 @@ import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { logger } from 'hono/logger'
 import { cors } from 'hono/cors'
+import { HTTPException } from 'hono/http-exception'
 import authRoutes from './routes/auth'
 import roundRoutes from './routes/rounds'
 import communityRoutes from './routes/communities'
@@ -13,6 +14,10 @@ import courseRoutes from './routes/courses'
 import announcementRoutes from './routes/announcements'
 import uploadRoutes from './routes/uploads'
 import notificationRoutes from './routes/notifications'
+import venueRoutes from './routes/venues'
+import bookingRoutes from './routes/bookings'
+import merchantRoutes from './routes/merchant'
+import creditRoutes from './routes/credits'
 
 const app = new Hono()
 
@@ -46,14 +51,20 @@ app.route('/courses', courseRoutes)
 app.route('/announcements', announcementRoutes)
 app.route('/uploads', uploadRoutes)
 app.route('/notifications', notificationRoutes)
+app.route('/venues', venueRoutes)
+app.route('/bookings', bookingRoutes)
+app.route('/merchant', merchantRoutes)
+app.route('/credits', creditRoutes)
 
 // 404 fallback
-app.notFound((c) => c.json({ error: 'Not found' }, 404))
+app.notFound((c) => c.json({ error: '找不到資源' }, 404))
 
 // Error handler
 app.onError((err, c) => {
+  // Let intentional HTTP errors (e.g. 409 slot conflict) surface as-is.
+  if (err instanceof HTTPException) return err.getResponse()
   console.error(err)
-  return c.json({ error: 'Internal server error' }, 500)
+  return c.json({ error: '伺服器發生錯誤' }, 500)
 })
 
 const port = parseInt(process.env.PORT ?? '3000', 10)

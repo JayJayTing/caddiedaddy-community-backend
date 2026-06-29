@@ -150,24 +150,106 @@ enum ModerationAction {
   post_flagged
 }
 
+// ── Merchant booking ──────────────────────────────────────────────────────────
+
+enum VenueStatus {
+  pending
+  approved
+  active
+  suspended
+}
+
+enum VenueOperatorRole {
+  owner
+  manager
+  staff
+}
+
+enum SlotStatus {
+  open
+  blocked
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  cancelled
+  completed
+  no_show
+}
+
+enum PaymentMode {
+  pay_at_venue
+  deposit
+  prepaid
+}
+
+enum PaymentStatus {
+  none
+  deposit_paid
+  paid
+  refunded
+}
+
+// ── Credits & settlement (Phase 3) ─────────────────────────────────────────────
+
+enum CreditEntryType {
+  purchase // bought credits (money in)
+  bonus // promo / goodwill grant
+  booking_spend // spent on a credit booking
+  booking_refund // returned when a credit booking is cancelled
+  adjustment // manual correction
+}
+
+enum CreditPurchaseStatus {
+  pending // created, awaiting payment confirmation (PSP or manual)
+  paid // confirmed → credits granted
+  failed
+  refunded
+}
+
+enum SettlementStatus {
+  accrued // platform owes the merchant; not yet paid out
+  voided // booking cancelled before payout → cancelled out
+  paid // included in a completed payout
+}
+
+enum PayoutStatus {
+  pending
+  paid
+}
+
+// ── Availability sourcing & date overrides ──────────────────────────────────────
+
+enum SlotSource {
+  rule // materialized from an AvailabilityRule (the default path)
+  manual // a one-off slot an operator added by hand
+  import // future: ingested from an external tee-sheet / Excel
+}
+
+enum AvailabilityExceptionType {
+  closed // the venue is closed that whole date (no tee times / sessions)
+  custom_hours // override the day's hours/pricing (fields below; wired later)
+}
+
 // ==================
 // USERS
 // ==================
 
 model User {
-  id            String    @id @default(uuid())
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   displayName   String    @map("display_name") @db.VarChar(80)
   avatarUrl     String?   @map("avatar_url")
   avatarInitial String?   @map("avatar_initial") @db.Char(1)
   bio           String?   @db.Text
   locationText  String?   @map("location_text") @db.VarChar(80)
-  homeCourseId  String?   @map("home_course_id")
+  homeCourseId  String?   @map("home_course_id") @db.Uuid
   homeCourse    Course?   @relation("UserHomeCourse", fields: [homeCourseId], references: [id])
   handicapIndex Decimal?  @map("handicap_index") @db.Decimal(4, 1)
   memberSince   DateTime? @map("member_since") @db.Date
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  deletedAt     DateTime? @map("deleted_at")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
 
   // Auth
   authMethods UserAuthMethod[]
@@ -205,19 +287,27 @@ model User {
   // Handicap history
   handicapHistory HandicapHistory[]
 
+  // Merchant booking
+  venueOperators VenueOperator[]
+  bookings       Booking[]
+
+  // Credits
+  creditAccount   CreditAccount?
+  creditPurchases CreditPurchase[]
+
   @@index([homeCourseId])
   @@index([deletedAt])
   @@map("users")
 }
 
 model UserAuthMethod {
-  id         String     @id @default(uuid())
-  userId     String     @map("user_id")
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String     @map("user_id") @db.Uuid
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   method     AuthMethod
   credential String // phone number, email, or provider sub_id
-  verifiedAt DateTime?  @map("verified_at")
-  createdAt  DateTime   @default(now()) @map("created_at")
+  verifiedAt DateTime?  @map("verified_at") @db.Timestamptz
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz
 
   @@unique([method, credential])
   @@index([userId])
@@ -229,7 +319,7 @@ model UserAuthMethod {
 // ==================
 
 model Course {
-  id           String   @id @default(uuid())
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name         String   @db.VarChar(100)
   locationText String?  @map("location_text") @db.VarChar(80)
   district     String?  @db.VarChar(40)
@@ -238,7 +328,10 @@ model Course {
   lat          Decimal? @db.Decimal(9, 6)
   lng          Decimal? @db.Decimal(9, 6)
   holeCount    Int      @default(18) @map("hole_count")
-  createdAt    DateTime @default(now()) @map("created_at")
+  // Google Maps Place ID — set when a course is created from a Google Places
+  // search (host flow). Unique so repeated picks of the same venue reuse one row.
+  googlePlaceId String? @unique @map("google_place_id") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   // Relations
   userHomeCourse      User[]          @relation("UserHomeCourse")
@@ -246,6 +339,7 @@ model Course {
   communityHomeCourse Community[]     @relation("CommunityHomeCourse")
   postLocationCourse  Post[]
   postScorecards      PostScorecard[]
+  venues              Venue[]
 
   @@index([name])
   @@map("courses")
@@ -256,10 +350,10 @@ model Course {
 // ==================
 
 model Round {
-  id                  String              @id @default(uuid())
-  hostUserId          String              @map("host_user_id")
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  hostUserId          String              @map("host_user_id") @db.Uuid
   hostUser            User                @relation("RoundHost", fields: [hostUserId], references: [id])
-  courseId            String              @map("course_id")
+  courseId            String              @map("course_id") @db.Uuid
   course              Course              @relation(fields: [courseId], references: [id])
   date                DateTime            @db.Date
   teeTime             DateTime            @map("tee_time") @db.Time()
@@ -270,17 +364,18 @@ model Round {
   greenFeeCents       Int?                @map("green_fee_cents") // NT$ × 100
   handicapRequirement HandicapRequirement @default(all) @map("handicap_requirement")
   visibility          RoundVisibility     @default(public)
-  communityId         String?             @map("community_id")
+  communityId         String?             @map("community_id") @db.Uuid
   community           Community?          @relation(fields: [communityId], references: [id])
   notes               String?             @db.Text
   color1              String?             @db.VarChar(20)
   color2              String?             @db.VarChar(20)
   status              RoundStatus         @default(open)
-  createdAt           DateTime            @default(now()) @map("created_at")
-  updatedAt           DateTime            @updatedAt @map("updated_at")
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   participants RoundParticipant[]
   postLinks    PostRoundLink[]
+  booking      Booking?
 
   @@index([date, status])
   @@index([hostUserId])
@@ -290,14 +385,14 @@ model Round {
 }
 
 model RoundParticipant {
-  id        String          @id @default(uuid())
-  roundId   String          @map("round_id")
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  roundId   String          @map("round_id") @db.Uuid
   round     Round           @relation(fields: [roundId], references: [id], onDelete: Cascade)
-  userId    String          @map("user_id")
+  userId    String          @map("user_id") @db.Uuid
   user      User            @relation(fields: [userId], references: [id])
   role      ParticipantRole
-  joinedAt  DateTime        @default(now()) @map("joined_at")
-  updatedAt DateTime        @updatedAt @map("updated_at")
+  joinedAt  DateTime        @default(now()) @map("joined_at") @db.Timestamptz
+  updatedAt DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@unique([roundId, userId])
   @@index([userId, role])
@@ -310,12 +405,12 @@ model RoundParticipant {
 // ==================
 
 model Community {
-  id           String           @id @default(uuid())
-  creatorId    String           @map("creator_id")
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  creatorId    String           @map("creator_id") @db.Uuid
   creator      User             @relation("CommunityCreator", fields: [creatorId], references: [id])
   name         String           @db.VarChar(80)
   type         CommunityType    @default(mixed)
-  homeCourseId String?          @map("home_course_id")
+  homeCourseId String?          @map("home_course_id") @db.Uuid
   homeCourse   Course?          @relation("CommunityHomeCourse", fields: [homeCourseId], references: [id])
   privacy      CommunityPrivacy @default(public)
   description  String?          @db.Text
@@ -325,9 +420,9 @@ model Community {
   memberCount  Int              @default(1) @map("member_count")
   postCount    Int              @default(0) @map("post_count")
   roundCount   Int              @default(0) @map("round_count")
-  createdAt    DateTime         @default(now()) @map("created_at")
-  updatedAt    DateTime         @updatedAt @map("updated_at")
-  deletedAt    DateTime?        @map("deleted_at")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt    DateTime?        @map("deleted_at") @db.Timestamptz
 
   members         CommunityMember[]
   invites         CommunityInvite[]
@@ -343,15 +438,15 @@ model Community {
 }
 
 model CommunityMember {
-  id          String                @id @default(uuid())
-  communityId String                @map("community_id")
+  id          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId String                @map("community_id") @db.Uuid
   community   Community             @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  userId      String                @map("user_id")
+  userId      String                @map("user_id") @db.Uuid
   user        User                  @relation(fields: [userId], references: [id])
   role        CommunityMemberRole   @default(member)
   status      CommunityMemberStatus @default(active)
-  joinedAt    DateTime              @default(now()) @map("joined_at")
-  updatedAt   DateTime              @updatedAt @map("updated_at")
+  joinedAt    DateTime              @default(now()) @map("joined_at") @db.Timestamptz
+  updatedAt   DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@unique([communityId, userId])
   @@index([userId, status])
@@ -360,17 +455,17 @@ model CommunityMember {
 }
 
 model CommunityInvite {
-  id           String       @id @default(uuid())
-  communityId  String       @map("community_id")
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId  String       @map("community_id") @db.Uuid
   community    Community    @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  inviterId    String       @map("inviter_id")
+  inviterId    String       @map("inviter_id") @db.Uuid
   inviter      User         @relation("InviteSender", fields: [inviterId], references: [id])
   inviteeEmail String?      @map("invitee_email")
   inviteePhone String?      @map("invitee_phone")
   token        String       @unique @db.VarChar(64)
   status       InviteStatus @default(pending)
-  expiresAt    DateTime     @map("expires_at")
-  createdAt    DateTime     @default(now()) @map("created_at")
+  expiresAt    DateTime     @map("expires_at") @db.Timestamptz
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([communityId])
   @@index([token])
@@ -382,13 +477,13 @@ model CommunityInvite {
 // ==================
 
 model Post {
-  id               String         @id @default(uuid())
-  authorId         String         @map("author_id")
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authorId         String         @map("author_id") @db.Uuid
   author           User           @relation(fields: [authorId], references: [id])
   type             PostType       @default(general)
   body             String         @db.Text
   locationText     String?        @map("location_text") @db.VarChar(80)
-  locationCourseId String?        @map("location_course_id")
+  locationCourseId String?        @map("location_course_id") @db.Uuid
   locationCourse   Course?        @relation(fields: [locationCourseId], references: [id])
   photoUrl         String?        @map("photo_url")
   visibility       PostVisibility @default(public)
@@ -398,9 +493,9 @@ model Post {
   likesCount       Int            @default(0) @map("likes_count")
   commentsCount    Int            @default(0) @map("comments_count")
   status           PostStatus     @default(active)
-  createdAt        DateTime       @default(now()) @map("created_at")
-  updatedAt        DateTime       @updatedAt @map("updated_at")
-  deletedAt        DateTime?      @map("deleted_at")
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt        DateTime?      @map("deleted_at") @db.Timestamptz
 
   communities    PostCommunity[]
   scorecard      PostScorecard?
@@ -417,9 +512,9 @@ model Post {
 
 // Many-to-many: post belongs to one or more communities
 model PostCommunity {
-  postId      String    @map("post_id")
+  postId      String    @map("post_id") @db.Uuid
   post        Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  communityId String    @map("community_id")
+  communityId String    @map("community_id") @db.Uuid
   community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
 
   @@id([postId, communityId])
@@ -428,25 +523,25 @@ model PostCommunity {
 }
 
 model PostScorecard {
-  id          String   @id @default(uuid())
-  postId      String   @unique @map("post_id")
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  postId      String   @unique @map("post_id") @db.Uuid
   post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  courseId    String?  @map("course_id")
+  courseId    String?  @map("course_id") @db.Uuid
   course      Course?  @relation(fields: [courseId], references: [id])
   label       String   @db.VarChar(40) // "Holes 1–9", "Full Round"
   scores      Int[] // array of 9 or 18 scores
   grossTotal  Int      @map("gross_total")
   holesPlayed Int      @map("holes_played")
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([courseId])
   @@map("post_scorecards")
 }
 
 model PostRoundLink {
-  postId  String @map("post_id")
+  postId  String @map("post_id") @db.Uuid
   post    Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
-  roundId String @map("round_id")
+  roundId String @map("round_id") @db.Uuid
   round   Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
 
   @@id([postId, roundId])
@@ -454,11 +549,11 @@ model PostRoundLink {
 }
 
 model PostLike {
-  postId    String   @map("post_id")
+  postId    String   @map("post_id") @db.Uuid
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  userId    String   @map("user_id")
+  userId    String   @map("user_id") @db.Uuid
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@id([postId, userId])
   @@index([userId])
@@ -466,15 +561,15 @@ model PostLike {
 }
 
 model Comment {
-  id        String    @id @default(uuid())
-  postId    String    @map("post_id")
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  postId    String    @map("post_id") @db.Uuid
   post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  authorId  String    @map("author_id")
+  authorId  String    @map("author_id") @db.Uuid
   author    User      @relation(fields: [authorId], references: [id])
   text      String    @db.Text
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
 
   @@index([postId, createdAt(sort: Asc)])
   @@index([authorId])
@@ -486,14 +581,14 @@ model Comment {
 // ==================
 
 model UserConnection {
-  id          String           @id @default(uuid())
-  initiatorId String           @map("initiator_id")
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  initiatorId String           @map("initiator_id") @db.Uuid
   initiator   User             @relation("ConnectionInitiator", fields: [initiatorId], references: [id])
-  recipientId String           @map("recipient_id")
+  recipientId String           @map("recipient_id") @db.Uuid
   recipient   User             @relation("ConnectionRecipient", fields: [recipientId], references: [id])
   status      ConnectionStatus @default(pending)
-  initiatedAt DateTime         @default(now()) @map("initiated_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  initiatedAt DateTime         @default(now()) @map("initiated_at") @db.Timestamptz
+  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@unique([initiatorId, recipientId])
   @@index([recipientId, status])
@@ -506,13 +601,13 @@ model UserConnection {
 // ==================
 
 model ChatThread {
-  id            String     @id @default(uuid())
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   type          ThreadType @default(dm)
-  communityId   String?    @map("community_id")
+  communityId   String?    @map("community_id") @db.Uuid
   community     Community? @relation(fields: [communityId], references: [id])
   name          String?    @db.VarChar(80)
-  lastMessageAt DateTime?  @map("last_message_at")
-  createdAt     DateTime   @default(now()) @map("created_at")
+  lastMessageAt DateTime?  @map("last_message_at") @db.Timestamptz
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
 
   participants ThreadParticipant[]
   messages     Message[]
@@ -523,13 +618,13 @@ model ChatThread {
 }
 
 model ThreadParticipant {
-  threadId   String     @map("thread_id")
+  threadId   String     @map("thread_id") @db.Uuid
   thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  userId     String     @map("user_id")
+  userId     String     @map("user_id") @db.Uuid
   user       User       @relation(fields: [userId], references: [id])
-  lastReadAt DateTime?  @map("last_read_at")
-  joinedAt   DateTime   @default(now()) @map("joined_at")
-  leftAt     DateTime?  @map("left_at")
+  lastReadAt DateTime?  @map("last_read_at") @db.Timestamptz
+  joinedAt   DateTime   @default(now()) @map("joined_at") @db.Timestamptz
+  leftAt     DateTime?  @map("left_at") @db.Timestamptz
   isMuted    Boolean    @default(false) @map("is_muted")
 
   @@id([threadId, userId])
@@ -538,15 +633,15 @@ model ThreadParticipant {
 }
 
 model Message {
-  id        String     @id @default(uuid())
-  threadId  String     @map("thread_id")
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  threadId  String     @map("thread_id") @db.Uuid
   thread    ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  senderId  String     @map("sender_id")
+  senderId  String     @map("sender_id") @db.Uuid
   sender    User       @relation(fields: [senderId], references: [id])
   text      String     @db.Text
-  createdAt DateTime   @default(now()) @map("created_at")
-  editedAt  DateTime?  @map("edited_at")
-  deletedAt DateTime?  @map("deleted_at")
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  editedAt  DateTime?  @map("edited_at") @db.Timestamptz
+  deletedAt DateTime?  @map("deleted_at") @db.Timestamptz
 
   @@index([threadId, createdAt(sort: Desc)])
   @@index([senderId])
@@ -558,16 +653,16 @@ model Message {
 // ==================
 
 model Notification {
-  id         String                  @id @default(uuid())
-  userId     String                  @map("user_id")
+  id         String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String                  @map("user_id") @db.Uuid
   user       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   type       NotificationType
   title      String                  @db.VarChar(120)
   body       String                  @db.Text
   targetType NotificationTargetType? @map("target_type")
-  targetId   String?                 @map("target_id")
-  readAt     DateTime?               @map("read_at")
-  createdAt  DateTime                @default(now()) @map("created_at")
+  targetId   String?                 @map("target_id") @db.Uuid
+  readAt     DateTime?               @map("read_at") @db.Timestamptz
+  createdAt  DateTime                @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([userId, readAt])
@@ -575,13 +670,13 @@ model Notification {
 }
 
 model UserNotificationPref {
-  userId            String   @id @map("user_id")
+  userId            String   @id @map("user_id") @db.Uuid
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   roundsNearby      Boolean  @default(true) @map("rounds_nearby")
   communityActivity Boolean  @default(true) @map("community_activity")
   roundReminders    Boolean  @default(true) @map("round_reminders")
   newMessages       Boolean  @default(true) @map("new_messages")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("user_notification_prefs")
 }
@@ -591,14 +686,14 @@ model UserNotificationPref {
 // ==================
 
 model Announcement {
-  id          String    @id @default(uuid())
-  authorId    String    @map("author_id")
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authorId    String    @map("author_id") @db.Uuid
   badge       String    @db.VarChar(40) // "Announcement", "Rule Update", "Course Notice"
   title       String    @db.VarChar(120)
   body        String    @db.Text
-  publishedAt DateTime  @map("published_at")
-  expiresAt   DateTime? @map("expires_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
+  publishedAt DateTime  @map("published_at") @db.Timestamptz
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([publishedAt(sort: Desc)])
   @@index([expiresAt])
@@ -610,18 +705,18 @@ model Announcement {
 // ==================
 
 model ModerationLog {
-  id           String           @id @default(uuid())
-  moderatorId  String           @map("moderator_id")
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  moderatorId  String           @map("moderator_id") @db.Uuid
   moderator    User             @relation("Moderator", fields: [moderatorId], references: [id])
-  communityId  String           @map("community_id")
+  communityId  String           @map("community_id") @db.Uuid
   community    Community        @relation(fields: [communityId], references: [id])
-  targetUserId String           @map("target_user_id")
+  targetUserId String           @map("target_user_id") @db.Uuid
   targetUser   User             @relation("ModTarget", fields: [targetUserId], references: [id])
   action       ModerationAction
-  targetPostId String?          @map("target_post_id")
+  targetPostId String?          @map("target_post_id") @db.Uuid
   targetPost   Post?            @relation(fields: [targetPostId], references: [id])
   reason       String?          @db.Text
-  createdAt    DateTime         @default(now()) @map("created_at")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([communityId, createdAt(sort: Desc)])
   @@index([targetUserId])
@@ -634,12 +729,298 @@ model ModerationLog {
 // ==================
 
 model HandicapHistory {
-  id            String   @id @default(uuid())
-  userId        String   @map("user_id")
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   handicapIndex Decimal  @map("handicap_index") @db.Decimal(4, 1)
-  recordedAt    DateTime @default(now()) @map("recorded_at")
+  recordedAt    DateTime @default(now()) @map("recorded_at") @db.Timestamptz
 
   @@index([userId, recordedAt(sort: Desc)])
   @@map("handicap_history")
+}
+
+// ==================
+// MERCHANT BOOKING
+// ==================
+// Real stores / driving ranges that publish their own bookable times, prices,
+// and rules. A Venue is the bookable business; AvailabilityRule templates are
+// materialized into concrete BookingSlot rows that golfers actually book.
+
+model Venue {
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String      @db.VarChar(100)
+  type         VenueType   @default(course)
+  courseId     String?     @map("course_id") @db.Uuid
+  course       Course?     @relation(fields: [courseId], references: [id])
+  status       VenueStatus @default(pending)
+  locationText String?     @map("location_text") @db.VarChar(120)
+  district     String?     @db.VarChar(40)
+  city         String?     @db.VarChar(40)
+  country      String      @default("TW") @db.Char(2)
+  lat          Decimal?    @db.Decimal(9, 6)
+  lng          Decimal?    @db.Decimal(9, 6)
+  phone        String?     @db.VarChar(40)
+  description  String?     @db.Text
+  coverUrl     String?     @map("cover_url")
+
+  // Booking policy (rules the merchant sets)
+  paymentMode             PaymentMode @default(pay_at_venue) @map("payment_mode")
+  depositCents            Int?        @map("deposit_cents")
+  minPartySize            Int         @default(1) @map("min_party_size")
+  maxPartySize            Int         @default(4) @map("max_party_size")
+  advanceBookingDays      Int         @default(30) @map("advance_booking_days")
+  cancellationCutoffHours Int         @default(24) @map("cancellation_cutoff_hours")
+  commissionBps           Int         @default(0) @map("commission_bps")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  operators         VenueOperator[]
+  availabilityRules AvailabilityRule[]
+  slots             BookingSlot[]
+  bookings          Booking[]
+  settlementItems   SettlementItem[]
+  payouts           Payout[]
+  exceptions        AvailabilityException[]
+
+  @@index([status])
+  @@index([city, district])
+  @@index([courseId])
+  @@map("venues")
+}
+
+model VenueOperator {
+  id        String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  venueId   String            @map("venue_id") @db.Uuid
+  venue     Venue             @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  userId    String            @map("user_id") @db.Uuid
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      VenueOperatorRole @default(staff)
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([venueId, userId])
+  @@index([userId])
+  @@map("venue_operators")
+}
+
+// Recurring template the merchant configures; a generator materializes
+// BookingSlots from these for a date range.
+model AvailabilityRule {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  venueId          String    @map("venue_id") @db.Uuid
+  venue            Venue     @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  label            String?   @db.VarChar(60)
+  weekdayMask      Int       @map("weekday_mask") // bitmask, bit 0 = Sunday … bit 6 = Saturday
+  startMinute      Int       @map("start_minute") // minutes from midnight (06:00 = 360)
+  endMinute        Int       @map("end_minute") // last slot start
+  intervalMin      Int       @default(10) @map("interval_min")
+  holes            Int? // 9/18 for courses; null for ranges
+  capacity         Int       @default(4)
+  priceCents       Int       @map("price_cents")
+  creditPriceCents Int?      @map("credit_price_cents") // discounted credit-only deal price; null = not credit-eligible
+  validFrom        DateTime? @map("valid_from") @db.Date
+  validTo          DateTime? @map("valid_to") @db.Date
+  active           Boolean   @default(true)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  slots BookingSlot[]
+
+  @@index([venueId, active])
+  @@map("availability_rules")
+}
+
+model BookingSlot {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  venueId          String            @map("venue_id") @db.Uuid
+  venue            Venue             @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  ruleId           String?           @map("rule_id") @db.Uuid
+  rule             AvailabilityRule? @relation(fields: [ruleId], references: [id])
+  date             DateTime          @db.Date
+  startTime        DateTime          @map("start_time") @db.Time()
+  holes            Int?
+  capacity         Int
+  bookedCount      Int               @default(0) @map("booked_count")
+  priceCents       Int               @map("price_cents")
+  creditPriceCents Int?              @map("credit_price_cents") // deal price for credit bookings; copied from rule, per-slot overridable
+  status           SlotStatus        @default(open)
+  source           SlotSource        @default(rule) // rule (generated) | manual (one-off) | import (external)
+  externalRef      String?           @map("external_ref") @db.VarChar(120) // provenance for imported/external slots; null for internal
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  bookings Booking[]
+
+  @@unique([venueId, date, startTime, holes])
+  @@index([venueId, date, status])
+  @@map("booking_slots")
+}
+
+// Date-specific override: close a venue for a day (tournament / maintenance /
+// weather), or (later) override that day's hours & pricing. The slot generator
+// skips `closed` dates; `custom_hours` fields are reserved for a later phase.
+model AvailabilityException {
+  id               String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  venueId          String                    @map("venue_id") @db.Uuid
+  venue            Venue                     @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  date             DateTime                  @db.Date
+  type             AvailabilityExceptionType @default(closed)
+  reason           String?                   @db.VarChar(120)
+  // Reserved for type = custom_hours (not yet wired into the generator):
+  startMinute      Int?                      @map("start_minute")
+  endMinute        Int?                      @map("end_minute")
+  intervalMin      Int?                      @map("interval_min")
+  capacity         Int?
+  priceCents       Int?                      @map("price_cents")
+  creditPriceCents Int?                      @map("credit_price_cents")
+  createdAt        DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([venueId, date])
+  @@index([venueId, date])
+  @@map("availability_exceptions")
+}
+
+model Booking {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  venueId        String        @map("venue_id") @db.Uuid
+  venue          Venue         @relation(fields: [venueId], references: [id])
+  slotId         String        @map("slot_id") @db.Uuid
+  slot           BookingSlot   @relation(fields: [slotId], references: [id])
+  userId         String        @map("user_id") @db.Uuid
+  user           User          @relation(fields: [userId], references: [id])
+  partySize      Int           @default(1) @map("party_size")
+  unitPriceCents Int           @map("unit_price_cents")
+  totalCents     Int           @map("total_cents")
+  creditCents    Int           @default(0) @map("credit_cents") // credits applied; >0 ⇒ credit booking
+  status         BookingStatus @default(confirmed)
+  paymentStatus  PaymentStatus @default(none) @map("payment_status")
+  roundId        String?       @unique @map("round_id") @db.Uuid
+  round          Round?        @relation(fields: [roundId], references: [id])
+  notes          String?       @db.Text
+  cancelledAt    DateTime?     @map("cancelled_at") @db.Timestamptz
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  settlementItem SettlementItem?
+
+  @@index([venueId, status])
+  @@index([userId])
+  @@index([slotId])
+  @@map("bookings")
+}
+
+// ==================
+// CREDITS & SETTLEMENT
+// ==================
+// Golfers bulk-buy credits (par: NT$1 = 1 credit, wallet stored in NT$ cents) and
+// spend them for discounted merchant "deal" prices. The platform keeps a commission
+// (Venue.commissionBps) and records what it owes each merchant (SettlementItem) so
+// it can pay them back monthly (Payout). CreditPurchase is the seam a real PSP fills
+// later; today purchases are confirmed manually.
+
+// One wallet per user. balanceCents is denormalized (same pattern as
+// BookingSlot.bookedCount); CreditLedgerEntry is the append-only source of truth.
+model CreditAccount {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @unique @map("user_id") @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balanceCents Int      @default(0) @map("balance_cents")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  entries CreditLedgerEntry[]
+
+  @@map("credit_accounts")
+}
+
+model CreditLedgerEntry {
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId         String          @map("account_id") @db.Uuid
+  account           CreditAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  type              CreditEntryType
+  deltaCents        Int             @map("delta_cents") // + credit, - spend
+  balanceAfterCents Int             @map("balance_after_cents")
+  bookingId         String?         @map("booking_id") @db.Uuid
+  purchaseId        String?         @map("purchase_id") @db.Uuid
+  note              String?         @db.Text
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([accountId, createdAt(sort: Desc)])
+  @@map("credit_ledger_entries")
+}
+
+// Bulk tiers a golfer can buy. Par for now (creditCents == priceCents); the schema
+// leaves room for future bonus pricing (creditCents > priceCents).
+model CreditPackage {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @db.VarChar(60)
+  priceCents  Int      @map("price_cents") // real money the golfer pays
+  creditCents Int      @map("credit_cents") // credits granted
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  purchases CreditPurchase[]
+
+  @@index([active, sortOrder])
+  @@map("credit_packages")
+}
+
+model CreditPurchase {
+  id          String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String               @map("user_id") @db.Uuid
+  user        User                 @relation(fields: [userId], references: [id])
+  packageId   String?              @map("package_id") @db.Uuid
+  package     CreditPackage?       @relation(fields: [packageId], references: [id])
+  paidCents   Int                  @map("paid_cents") // real money charged
+  creditCents Int                  @map("credit_cents") // credits to grant on confirm
+  status      CreditPurchaseStatus @default(pending)
+  provider    String?              @db.VarChar(40) // 'manual' now; PSP name later
+  providerRef String?              @map("provider_ref") @db.VarChar(120)
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status])
+  @@map("credit_purchases")
+}
+
+// One row per credit-funded booking: what the platform owes the merchant after
+// commission. Written inside the booking transaction; grouped into a Payout monthly.
+model SettlementItem {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  venueId         String           @map("venue_id") @db.Uuid
+  venue           Venue            @relation(fields: [venueId], references: [id])
+  bookingId       String           @unique @map("booking_id") @db.Uuid
+  booking         Booking          @relation(fields: [bookingId], references: [id])
+  grossCents      Int              @map("gross_cents") // credit price the golfer paid
+  commissionCents Int              @map("commission_cents")
+  netCents        Int              @map("net_cents") // owed to the merchant
+  status          SettlementStatus @default(accrued)
+  payoutId        String?          @map("payout_id") @db.Uuid
+  payout          Payout?          @relation(fields: [payoutId], references: [id])
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([venueId, status])
+  @@map("settlement_items")
+}
+
+// Monthly batch per venue (populated by the deferred settlement-report script).
+model Payout {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  venueId       String       @map("venue_id") @db.Uuid
+  venue         Venue        @relation(fields: [venueId], references: [id])
+  periodStart   DateTime     @map("period_start") @db.Date
+  periodEnd     DateTime     @map("period_end") @db.Date
+  totalNetCents Int          @map("total_net_cents")
+  status        PayoutStatus @default(pending)
+  reference     String?      @db.VarChar(120)
+  paidAt        DateTime?    @map("paid_at") @db.Timestamptz
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  items SettlementItem[]
+
+  @@index([venueId, status])
+  @@map("payouts")
 }

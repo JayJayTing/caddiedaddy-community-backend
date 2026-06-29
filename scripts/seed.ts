@@ -43,30 +43,27 @@ async function createUser(email: string, password: string, displayName: string):
     body: JSON.stringify({ email, password, displayName }),
   })
 
-  if (res.status === 400) {
-    // User may already exist — try logging in to get the ID
-    const loginRes = await fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    })
-    if (!loginRes.ok) {
-      const body = await loginRes.text()
-      throw new Error(`Login failed for ${email}: ${body}`)
-    }
-    const { user } = await loginRes.json()
-    console.log(`  ↩  ${email} already exists — id: ${user.id}`)
-    return user.id
+  if (res.ok) {
+    const { user } = await res.json()
+    console.log(`  ✓  Created ${email} — id: ${user.id}`)
+    return user.id as string
   }
 
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`Signup failed for ${email}: ${body}`)
+  // Signup failed (most commonly: email already registered) — fall back to login
+  // to recover the existing user's id, so the seed stays idempotent.
+  const loginRes = await fetch(`${API_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+  if (!loginRes.ok) {
+    const signupBody = await res.text()
+    const loginBody = await loginRes.text()
+    throw new Error(`Signup failed for ${email}: ${signupBody} — and login fallback failed: ${loginBody}`)
   }
-
-  const { user } = await res.json()
-  console.log(`  ✓  Created ${email} — id: ${user.id}`)
-  return user.id as string
+  const { user } = await loginRes.json()
+  console.log(`  ↩  ${email} already exists — id: ${user.id}`)
+  return user.id
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -673,6 +670,193 @@ async function main() {
   }
 
   console.log(`  ✓  Created 3 announcements`)
+
+  // ── Step 9: Merchant venues, rules & bookable slots ───────────────────────
+
+  console.log('\nStep 9: Creating merchant venues + availability...')
+
+  // Time stored timezone-naive on the epoch date in UTC (matches Round.teeTime).
+  const minToTime = (min: number): Date => {
+    const d = new Date('1970-01-01T00:00:00.000Z')
+    d.setUTCHours(Math.floor(min / 60), min % 60, 0, 0)
+    return d
+  }
+  const utcDay = (offset: number): Date => {
+    const n = new Date()
+    return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + offset))
+  }
+
+  // weekday bitmask: bit 0 = Sun … bit 6 = Sat
+  const WEEKDAYS = 0b0111110 // Mon–Fri
+  const WEEKEND = 0b1000001 // Sat + Sun
+  const ALL_DAYS = 0b1111111
+
+  const venueDefs = [
+    {
+      slug: 'venue-sunrise',
+      courseId: uid('course-sunrise-001'),
+      name: 'Sunrise Golf Club',
+      type: 'course' as const,
+      locationText: 'Yangmei, Taoyuan',
+      district: 'Yangmei',
+      city: 'Taoyuan',
+      phone: '03-478-0000',
+      description: '18-hole championship course. Book your tee time online, pay at the clubhouse.',
+      rules: [
+        { slug: 'r-weekday', label: 'Weekday', weekdayMask: WEEKDAYS, startMinute: 360, endMinute: 660, intervalMin: 10, holes: 18, capacity: 4, priceCents: 280000, creditPriceCents: 224000 },
+        { slug: 'r-weekend', label: 'Weekend', weekdayMask: WEEKEND, startMinute: 360, endMinute: 720, intervalMin: 10, holes: 18, capacity: 4, priceCents: 360000, creditPriceCents: 288000 },
+      ],
+    },
+    {
+      slug: 'venue-yangmei-range',
+      courseId: null,
+      name: 'Yangmei Driving Range',
+      type: 'driving_range' as const,
+      locationText: 'Yangmei, Taoyuan',
+      district: 'Yangmei',
+      city: 'Taoyuan',
+      phone: '03-478-1111',
+      description: '12-bay covered driving range. Hourly bay reservations.',
+      rules: [
+        { slug: 'r-bays', label: 'All day', weekdayMask: ALL_DAYS, startMinute: 480, endMinute: 1320, intervalMin: 60, holes: null, capacity: 12, priceCents: 30000, creditPriceCents: 24000 },
+      ],
+    },
+  ]
+
+  let venueCount = 0
+  let slotCount = 0
+
+  for (const v of venueDefs) {
+    const venue = await prisma.venue.upsert({
+      where: { id: uid(v.slug) },
+      update: {},
+      create: {
+        id: uid(v.slug),
+        name: v.name,
+        type: v.type,
+        courseId: v.courseId,
+        status: 'active',
+        locationText: v.locationText,
+        district: v.district,
+        city: v.city,
+        country: 'TW',
+        phone: v.phone,
+        description: v.description,
+        paymentMode: 'pay_at_venue',
+        commissionBps: 1000, // 10% platform commission on credit bookings
+        operators: { create: { userId: alexId, role: 'owner' } },
+      },
+    })
+    venueCount++
+
+    const slotRows: {
+      venueId: string; ruleId: string; date: Date; startTime: Date
+      holes: number | null; capacity: number; priceCents: number; creditPriceCents: number | null
+    }[] = []
+
+    for (const r of v.rules) {
+      const rule = await prisma.availabilityRule.upsert({
+        where: { id: uid(`${v.slug}-${r.slug}`) },
+        update: {},
+        create: {
+          id: uid(`${v.slug}-${r.slug}`),
+          venueId: venue.id,
+          label: r.label,
+          weekdayMask: r.weekdayMask,
+          startMinute: r.startMinute,
+          endMinute: r.endMinute,
+          intervalMin: r.intervalMin,
+          holes: r.holes,
+          capacity: r.capacity,
+          priceCents: r.priceCents,
+          creditPriceCents: r.creditPriceCents,
+        },
+      })
+
+      // Materialize the next 21 days of slots from this rule.
+      for (let offset = 0; offset < 21; offset++) {
+        const date = utcDay(offset)
+        if ((r.weekdayMask & (1 << date.getUTCDay())) === 0) continue
+        for (let m = r.startMinute; m <= r.endMinute; m += r.intervalMin) {
+          slotRows.push({
+            venueId: venue.id,
+            ruleId: rule.id,
+            date,
+            startTime: minToTime(m),
+            holes: r.holes,
+            capacity: r.capacity,
+            priceCents: r.priceCents,
+            creditPriceCents: r.creditPriceCents,
+          })
+        }
+      }
+    }
+
+    const res = await prisma.bookingSlot.createMany({ data: slotRows, skipDuplicates: true })
+    slotCount += res.count
+  }
+
+  console.log(`  ✓  Created ${venueCount} venues with ${slotCount} bookable slots (owner: Alex Johnson)`)
+
+  // ── Step 10: Credit packages + wallet balances ────────────────────────────
+
+  console.log('\nStep 10: Creating credit packages + wallet balances...')
+
+  const packageDefs = [
+    { slug: 'pkg-starter', name: 'Starter', priceCents: 500000, creditCents: 500000, sortOrder: 1 },
+    { slug: 'pkg-regular', name: 'Regular', priceCents: 1000000, creditCents: 1000000, sortOrder: 2 },
+    { slug: 'pkg-pro', name: 'Pro', priceCents: 2000000, creditCents: 2000000, sortOrder: 3 },
+  ]
+
+  for (const p of packageDefs) {
+    await prisma.creditPackage.upsert({
+      where: { id: uid(p.slug) },
+      update: { name: p.name, priceCents: p.priceCents, creditCents: p.creditCents, sortOrder: p.sortOrder, active: true },
+      create: { id: uid(p.slug), name: p.name, priceCents: p.priceCents, creditCents: p.creditCents, sortOrder: p.sortOrder, active: true },
+    })
+  }
+
+  // Give each demo user NT$10,000 of starting credits so the deal flow is testable.
+  const STARTING_BALANCE = 1000000
+  for (const u of SEED_USERS) {
+    const userId = userIds[u.email]
+    const account = await prisma.creditAccount.upsert({
+      where: { userId },
+      update: { balanceCents: STARTING_BALANCE },
+      create: { id: uid(`credit-acct-${u.email}`), userId, balanceCents: STARTING_BALANCE },
+    })
+    await prisma.creditLedgerEntry.upsert({
+      where: { id: uid(`credit-seed-${u.email}`) },
+      update: {},
+      create: {
+        id: uid(`credit-seed-${u.email}`),
+        accountId: account.id,
+        type: 'bonus',
+        deltaCents: STARTING_BALANCE,
+        balanceAfterCents: STARTING_BALANCE,
+        note: 'Seed starting balance',
+      },
+    })
+  }
+
+  console.log(`  ✓  Created ${packageDefs.length} credit packages + seeded wallet balances (NT$10,000 each)`)
+
+  // ── Step 11: Sample date closure (AvailabilityException) ───────────────────
+
+  console.log('\nStep 11: Creating a sample closure...')
+
+  const closureDate = utcDay(5) // 5 days out so it falls within generated slots
+  await prisma.availabilityException.upsert({
+    where: { venueId_date: { venueId: uid('venue-sunrise'), date: closureDate } },
+    update: { type: 'closed', reason: 'Course maintenance' },
+    create: { venueId: uid('venue-sunrise'), date: closureDate, type: 'closed', reason: 'Course maintenance' },
+  })
+  // Mirror what the API does: drop that day's open slots that have no bookings.
+  await prisma.bookingSlot.deleteMany({
+    where: { venueId: uid('venue-sunrise'), date: closureDate, status: 'open', bookings: { none: {} } },
+  })
+
+  console.log(`  ✓  Sunrise Golf Club closed on ${closureDate.toISOString().slice(0, 10)} (maintenance)`)
 
   // ── Done ──────────────────────────────────────────────────────────────────
 
