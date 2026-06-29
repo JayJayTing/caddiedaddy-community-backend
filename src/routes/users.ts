@@ -67,7 +67,7 @@ users.get('/:id', async (c) => {
     },
   })
 
-  if (!data) return c.json({ error: 'User not found' }, 404)
+  if (!data) return c.json({ error: '找不到使用者' }, 404)
 
   return c.json({ data })
 })

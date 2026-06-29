@@ -82,7 +82,7 @@ communities.get('/:id', async (c) => {
 
   const data = await loadCommunityDetail(id)
 
-  if (!data || data.deletedAt) return c.json({ error: 'Community not found' }, 404)
+  if (!data || data.deletedAt) return c.json({ error: '找不到社群' }, 404)
 
   return c.json({ data })
 })
@@ -137,9 +137,9 @@ communities.post('/:id/join', authMiddleware, async (c) => {
     where: { id },
     select: { id: true, privacy: true, deletedAt: true },
   })
-  if (!community || community.deletedAt) return c.json({ error: 'Community not found' }, 404)
+  if (!community || community.deletedAt) return c.json({ error: '找不到社群' }, 404)
   if (community.privacy === 'private') {
-    return c.json({ error: 'This community is private — you need an invite to join' }, 403)
+    return c.json({ error: '此社群為私人社群，需要邀請才能加入' }, 403)
   }
 
   const existing = await prisma.communityMember.findUnique({
@@ -179,9 +179,9 @@ communities.post('/:id/leave', authMiddleware, async (c) => {
     where: { id },
     select: { id: true, creatorId: true, deletedAt: true },
   })
-  if (!community || community.deletedAt) return c.json({ error: 'Community not found' }, 404)
+  if (!community || community.deletedAt) return c.json({ error: '找不到社群' }, 404)
   if (community.creatorId === userId) {
-    return c.json({ error: 'The creator cannot leave their own community' }, 400)
+    return c.json({ error: '建立者無法退出自己建立的社群' }, 400)
   }
 
   const existing = await prisma.communityMember.findUnique({

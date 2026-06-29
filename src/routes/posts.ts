@@ -43,7 +43,7 @@ posts.get('/', zValidator('query', feedQuerySchema), async (c) => {
   if (scope === 'following') {
     const authHeader = c.req.header('Authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return c.json({ error: 'Authentication required for following feed' }, 401)
+      return c.json({ error: '查看追蹤動態需要登入' }, 401)
     }
     // authMiddleware is not applied to keep route open for discover/community,
     // so verify the token inline using the shared Supabase JWKS verifier.
@@ -56,7 +56,7 @@ posts.get('/', zValidator('query', feedQuerySchema), async (c) => {
       })
       userCommunityIds = memberships.map((m) => m.communityId)
     } catch {
-      return c.json({ error: 'Invalid or expired token' }, 401)
+      return c.json({ error: '權杖無效或已過期' }, 401)
     }
   }
 
@@ -66,7 +66,7 @@ posts.get('/', zValidator('query', feedQuerySchema), async (c) => {
   if (type) where.type = type
 
   if (scope === 'community') {
-    if (!communityId) return c.json({ error: 'communityId is required for community scope' }, 400)
+    if (!communityId) return c.json({ error: '社群範圍需要提供 communityId' }, 400)
     where.communities = { some: { communityId } }
   } else if (scope === 'following' && userCommunityIds) {
     where.communities = { some: { communityId: { in: userCommunityIds } } }
@@ -154,7 +154,7 @@ posts.get('/:id', async (c) => {
       _count: { select: { likes: true, comments: true } },
     },
   })
-  if (!data || data.deletedAt) return c.json({ error: 'Post not found' }, 404)
+  if (!data || data.deletedAt) return c.json({ error: '找不到貼文' }, 404)
   return c.json({ data })
 })
 
@@ -165,7 +165,7 @@ posts.post('/:id/like', authMiddleware, async (c) => {
   const postId = c.req.param('id')
 
   const post = await prisma.post.findUnique({ where: { id: postId } })
-  if (!post) return c.json({ error: 'Post not found' }, 404)
+  if (!post) return c.json({ error: '找不到貼文' }, 404)
 
   const existing = await prisma.postLike.findUnique({
     where: { postId_userId: { postId, userId } },
@@ -197,8 +197,8 @@ posts.post('/:id/like', authMiddleware, async (c) => {
       await createNotification({
         userId: post.authorId,
         type: 'post_like',
-        title: 'New like',
-        body: `${liker?.displayName ?? 'Someone'} liked your post`,
+        title: '新的讚',
+        body: `${liker?.displayName ?? '有人'} 按讚了你的貼文`,
         targetType: 'post',
         targetId: postId,
       })
@@ -219,7 +219,7 @@ posts.post('/:id/comments', authMiddleware, zValidator('json', createCommentSche
   const { text } = c.req.valid('json')
 
   const post = await prisma.post.findUnique({ where: { id: postId } })
-  if (!post) return c.json({ error: 'Post not found' }, 404)
+  if (!post) return c.json({ error: '找不到貼文' }, 404)
 
   const [data] = await prisma.$transaction([
     prisma.comment.create({
@@ -237,8 +237,8 @@ posts.post('/:id/comments', authMiddleware, zValidator('json', createCommentSche
     await createNotification({
       userId: post.authorId,
       type: 'post_comment',
-      title: 'New comment',
-      body: `${commenter?.displayName ?? 'Someone'} commented on your post`,
+      title: '新的留言',
+      body: `${commenter?.displayName ?? '有人'} 在你的貼文留言`,
       targetType: 'post',
       targetId: postId,
     })
@@ -253,7 +253,7 @@ posts.get('/:id/comments', async (c) => {
   const postId = c.req.param('id')
 
   const post = await prisma.post.findUnique({ where: { id: postId } })
-  if (!post) return c.json({ error: 'Post not found' }, 404)
+  if (!post) return c.json({ error: '找不到貼文' }, 404)
 
   const data = await prisma.comment.findMany({
     where: { postId, deletedAt: null },

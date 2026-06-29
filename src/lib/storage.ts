@@ -25,11 +25,11 @@ export class UploadError extends Error {
 // bucket via the service-role key and returns its public URL. Validates mime + size.
 export async function uploadImage(prefix: string, ownerId: string, file: File): Promise<string> {
   const ext = EXT_BY_MIME[file.type]
-  if (!ext) throw new UploadError(400, 'Unsupported image type — use png, jpg, webp, or gif')
+  if (!ext) throw new UploadError(400, '不支援的圖片格式，請使用 png、jpg、webp 或 gif')
 
   const buf = Buffer.from(await file.arrayBuffer())
-  if (buf.byteLength === 0) throw new UploadError(400, 'Empty file')
-  if (buf.byteLength > MAX_UPLOAD_BYTES) throw new UploadError(413, 'Image too large — max 5MB')
+  if (buf.byteLength === 0) throw new UploadError(400, '檔案內容為空')
+  if (buf.byteLength > MAX_UPLOAD_BYTES) throw new UploadError(413, '圖片過大，上限為 5MB')
 
   const path = `${prefix}/${ownerId}/${randomUUID()}.${ext}`
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
@@ -45,7 +45,7 @@ export async function uploadImage(prefix: string, ownerId: string, file: File): 
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
-    throw new UploadError(502, `Storage upload failed: ${detail.slice(0, 200)}`)
+    throw new UploadError(502, `儲存空間上傳失敗：${detail.slice(0, 200)}`)
   }
 
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`

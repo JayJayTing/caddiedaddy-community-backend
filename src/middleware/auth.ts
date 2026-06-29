@@ -9,7 +9,7 @@ export const authMiddleware = createMiddleware<{
   const authHeader = c.req.header('Authorization')
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return c.json({ error: 'Missing or invalid Authorization header' }, 401)
+    return c.json({ error: '缺少或無效的授權標頭' }, 401)
   }
 
   try {
@@ -17,6 +17,6 @@ export const authMiddleware = createMiddleware<{
     c.set('user', decoded)
     await next()
   } catch {
-    return c.json({ error: 'Invalid or expired token' }, 401)
+    return c.json({ error: '權杖無效或已過期' }, 401)
   }
 })

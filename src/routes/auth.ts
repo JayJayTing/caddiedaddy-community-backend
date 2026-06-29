@@ -88,7 +88,7 @@ auth.post('/verify-otp', zValidator('json', verifyOtpSchema), async (c) => {
 
   const { data, error } = await supabaseAdmin.auth.verifyOtp({ phone, token, type })
   if (error) return c.json({ error: error.message }, 400)
-  if (!data.user) return c.json({ error: 'Verification failed' }, 500)
+  if (!data.user) return c.json({ error: '驗證失敗' }, 500)
 
   const user = await ensureUserExists(data.user.id, {
     displayName: phone,
@@ -108,7 +108,7 @@ auth.post('/verify-otp', zValidator('json', verifyOtpSchema), async (c) => {
  */
 const signupSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: z.string().min(8, '密碼至少需要 8 個字元'),
   displayName: z.string().min(1).max(80),
 })
 
@@ -123,7 +123,7 @@ auth.post('/signup', zValidator('json', signupSchema), async (c) => {
   })
 
   if (createError) return c.json({ error: createError.message }, 400)
-  if (!createData.user) return c.json({ error: 'User creation failed' }, 500)
+  if (!createData.user) return c.json({ error: '建立使用者失敗' }, 500)
 
   // Sync to DB
   const user = await ensureUserExists(createData.user.id, {
@@ -188,7 +188,7 @@ auth.post('/logout', authMiddleware, async (c) => {
  */
 auth.get('/google/url', async (c) => {
   const redirectTo = c.req.query('redirectTo')
-  if (!redirectTo) return c.json({ error: 'redirectTo query param is required' }, 400)
+  if (!redirectTo) return c.json({ error: '缺少必要的 redirectTo 參數' }, 400)
 
   const { data, error } = await supabaseAdmin.auth.signInWithOAuth({
     provider: 'google',
@@ -215,7 +215,7 @@ auth.post('/google/callback', zValidator('json', googleCallbackSchema), async (c
 
   const { data, error } = await supabaseAdmin.auth.exchangeCodeForSession(code)
   if (error) return c.json({ error: error.message }, 400)
-  if (!data.user) return c.json({ error: 'No user returned from Google' }, 500)
+  if (!data.user) return c.json({ error: 'Google 未回傳使用者資料' }, 500)
 
   const supabaseUser = data.user
   const googleId =
@@ -262,7 +262,7 @@ auth.get('/me', authMiddleware, async (c) => {
     },
   })
 
-  if (!user) return c.json({ error: 'User not found' }, 404)
+  if (!user) return c.json({ error: '找不到使用者' }, 404)
 
   return c.json({ user })
 })

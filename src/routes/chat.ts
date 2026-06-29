@@ -72,7 +72,7 @@ chat.get('/:id/messages', authMiddleware, zValidator('query', messagesQuerySchem
     where: { threadId_userId: { threadId, userId } },
   })
   if (!participant || participant.leftAt !== null) {
-    return c.json({ error: 'Not a participant in this thread' }, 403)
+    return c.json({ error: '你不是此對話的參與者' }, 403)
   }
 
   const data = await prisma.message.findMany({
@@ -102,11 +102,11 @@ chat.post('/:id/messages', authMiddleware, zValidator('json', sendMessageSchema)
     where: { threadId_userId: { threadId, userId } },
   })
   if (!participant || participant.leftAt !== null) {
-    return c.json({ error: 'Not a participant in this thread' }, 403)
+    return c.json({ error: '你不是此對話的參與者' }, 403)
   }
 
   const thread = await prisma.chatThread.findUnique({ where: { id: threadId } })
-  if (!thread) return c.json({ error: 'Thread not found' }, 404)
+  if (!thread) return c.json({ error: '找不到對話' }, 404)
 
   const [data] = await prisma.$transaction([
     prisma.message.create({
@@ -132,9 +132,9 @@ chat.post('/', authMiddleware, zValidator('json', createDmSchema), async (c) => 
   const { sub: userId } = c.get('user')
   const { userId: targetId } = c.req.valid('json')
 
-  if (targetId === userId) return c.json({ error: 'Cannot DM yourself' }, 400)
+  if (targetId === userId) return c.json({ error: '無法傳訊息給自己' }, 400)
   const target = await prisma.user.findUnique({ where: { id: targetId } })
-  if (!target) return c.json({ error: 'User not found' }, 404)
+  if (!target) return c.json({ error: '找不到使用者' }, 404)
 
   const threadInclude = {
     participants: { where: { leftAt: null }, include: { user: { select: participantUserSelect } } },
@@ -173,7 +173,7 @@ chat.patch('/:id/read', authMiddleware, async (c) => {
   const participant = await prisma.threadParticipant.findUnique({
     where: { threadId_userId: { threadId, userId } },
   })
-  if (!participant) return c.json({ error: 'Not a participant in this thread' }, 403)
+  if (!participant) return c.json({ error: '你不是此對話的參與者' }, 403)
 
   await prisma.threadParticipant.update({
     where: { threadId_userId: { threadId, userId } },

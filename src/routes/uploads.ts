@@ -21,7 +21,7 @@ const userSelect = {
 
 function getFile(body: Record<string, unknown>): File {
   const f = body['file']
-  if (!(f instanceof File)) throw new UploadError(400, 'No file provided in field "file"')
+  if (!(f instanceof File)) throw new UploadError(400, '未提供檔案（欄位 "file"）')
   return f
 }
 
@@ -71,7 +71,7 @@ uploads.post('/community/:id', authMiddleware, async (c) => {
       where: { id },
       select: { id: true, creatorId: true, deletedAt: true },
     })
-    if (!community || community.deletedAt) return c.json({ error: 'Community not found' }, 404)
+    if (!community || community.deletedAt) return c.json({ error: '找不到社群' }, 404)
 
     let allowed = community.creatorId === userId
     if (!allowed) {
@@ -80,7 +80,7 @@ uploads.post('/community/:id', authMiddleware, async (c) => {
       })
       allowed = member?.role === 'admin'
     }
-    if (!allowed) return c.json({ error: 'Only the community admin can change its art' }, 403)
+    if (!allowed) return c.json({ error: '只有社群管理員可以變更社群封面' }, 403)
 
     const file = getFile(await c.req.parseBody())
     const url = await uploadImage('communities', id, file)

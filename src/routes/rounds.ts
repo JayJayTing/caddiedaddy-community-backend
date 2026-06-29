@@ -133,7 +133,7 @@ rounds.get('/:id', async (c) => {
     },
   })
 
-  if (!data) return c.json({ error: 'Round not found' }, 404)
+  if (!data) return c.json({ error: '找不到球局' }, 404)
 
   return c.json({ data })
 })
@@ -204,13 +204,13 @@ rounds.post('/:id/join', authMiddleware, async (c) => {
   const roundId = c.req.param('id')
 
   const round = await prisma.round.findUnique({ where: { id: roundId } })
-  if (!round) return c.json({ error: 'Round not found' }, 404)
-  if (round.status !== 'open') return c.json({ error: 'Round is not open for joining' }, 400)
+  if (!round) return c.json({ error: '找不到球局' }, 404)
+  if (round.status !== 'open') return c.json({ error: '此球局目前不開放加入' }, 400)
 
   const existing = await prisma.roundParticipant.findUnique({
     where: { roundId_userId: { roundId, userId } },
   })
-  if (existing) return c.json({ error: 'Already a participant' }, 400)
+  if (existing) return c.json({ error: '你已經是參與者' }, 400)
 
   await prisma.roundParticipant.create({
     data: { roundId, userId, role: 'requested' },
@@ -224,8 +224,8 @@ rounds.post('/:id/join', authMiddleware, async (c) => {
   await createNotification({
     userId: round.hostUserId,
     type: 'round_request',
-    title: 'New join request',
-    body: `${joiner?.displayName ?? 'Someone'} requested to join your round at ${course?.name ?? 'your course'}`,
+    title: '新的加入申請',
+    body: `${joiner?.displayName ?? '有人'} 申請加入你在 ${course?.name ?? '你的球場'} 的球局`,
     targetType: 'round',
     targetId: roundId,
   })
@@ -252,8 +252,8 @@ rounds.patch('/:id', authMiddleware, zValidator('json', editRoundSchema), async 
   const body = c.req.valid('json')
 
   const round = await prisma.round.findUnique({ where: { id } })
-  if (!round) return c.json({ error: 'Round not found' }, 404)
-  if (round.hostUserId !== userId) return c.json({ error: 'Only the host can edit this round' }, 403)
+  if (!round) return c.json({ error: '找不到球局' }, 404)
+  if (round.hostUserId !== userId) return c.json({ error: '只有主辦者可以編輯此球局' }, 403)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateData: Record<string, any> = {}
@@ -291,8 +291,8 @@ rounds.delete('/:id', authMiddleware, async (c) => {
   const id = c.req.param('id')
 
   const round = await prisma.round.findUnique({ where: { id } })
-  if (!round) return c.json({ error: 'Round not found' }, 404)
-  if (round.hostUserId !== userId) return c.json({ error: 'Only the host can cancel this round' }, 403)
+  if (!round) return c.json({ error: '找不到球局' }, 404)
+  if (round.hostUserId !== userId) return c.json({ error: '只有主辦者可以取消此球局' }, 403)
 
   const data = await prisma.round.update({ where: { id }, data: { status: 'cancelled' } })
   return c.json({ data })
@@ -311,13 +311,13 @@ rounds.patch('/:id/participants/:userId', authMiddleware, zValidator('json', par
   const { role } = c.req.valid('json')
 
   const round = await prisma.round.findUnique({ where: { id: roundId } })
-  if (!round) return c.json({ error: 'Round not found' }, 404)
-  if (round.hostUserId !== hostId) return c.json({ error: 'Only the host can manage requests' }, 403)
+  if (!round) return c.json({ error: '找不到球局' }, 404)
+  if (round.hostUserId !== hostId) return c.json({ error: '只有主辦者可以管理申請' }, 403)
 
   const participant = await prisma.roundParticipant.findUnique({
     where: { roundId_userId: { roundId, userId: targetUserId } },
   })
-  if (!participant) return c.json({ error: 'Participant not found' }, 404)
+  if (!participant) return c.json({ error: '找不到參與者' }, 404)
 
   const data = await prisma.roundParticipant.update({
     where: { roundId_userId: { roundId, userId: targetUserId } },
@@ -333,8 +333,8 @@ rounds.patch('/:id/participants/:userId', authMiddleware, zValidator('json', par
     await createNotification({
       userId: targetUserId,
       type: 'round_accepted',
-      title: 'Request accepted',
-      body: `${host?.displayName ?? 'The host'} accepted your request to join the round at ${course?.name ?? 'the course'}`,
+      title: '申請已通過',
+      body: `${host?.displayName ?? '主辦者'} 已通過你加入 ${course?.name ?? '該球場'} 球局的申請`,
       targetType: 'round',
       targetId: roundId,
     })
