@@ -11,7 +11,6 @@ const EXT_BY_MIME: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
   'image/webp': 'webp',
-  'image/gif': 'gif',
 }
 
 export class UploadError extends Error {
@@ -25,7 +24,7 @@ export class UploadError extends Error {
 // bucket via the service-role key and returns its public URL. Validates mime + size.
 export async function uploadImage(prefix: string, ownerId: string, file: File): Promise<string> {
   const ext = EXT_BY_MIME[file.type]
-  if (!ext) throw new UploadError(400, '不支援的圖片格式，請使用 png、jpg、webp 或 gif')
+  if (!ext) throw new UploadError(400, '不支援的圖片格式，請使用 png、jpg 或 webp')
 
   const buf = Buffer.from(await file.arrayBuffer())
   if (buf.byteLength === 0) throw new UploadError(400, '檔案內容為空')
