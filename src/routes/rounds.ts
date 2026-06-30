@@ -117,6 +117,9 @@ rounds.get('/upcoming', authMiddleware, async (c) => {
   const data = await prisma.round.findMany({
     where: {
       date: { gte: today },
+      // A cancelled round is never "your next round" — host-cancel already
+      // notifies every participant, so it lives in the bell, not the hero.
+      status: { not: 'cancelled' },
       participants: {
         some: {
           userId,
