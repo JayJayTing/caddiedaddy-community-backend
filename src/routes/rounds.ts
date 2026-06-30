@@ -28,8 +28,33 @@ const participantSelect = {
   id: true,
   userId: true,
   role: true,
+  joinedAt: true, // lets the client show the 1-minute back-out window after joining
   user: { select: { id: true, displayName: true, avatarInitial: true, avatarUrl: true } },
 } as const
+
+// How long after joining a player may still back out of a round, no questions
+// asked. Enforced here (not just in the UI) so the rule can't be bypassed.
+const BACKOUT_WINDOW_MS = 60_000
+
+// True when the user already holds a spot (host or accepted) in another active
+// round at the exact same date + tee time — i.e. would be double-booked.
+async function hasTimeConflict(
+  userId: string,
+  date: Date,
+  teeTime: Date,
+  excludeRoundId?: string,
+) {
+  const clash = await prisma.roundParticipant.findFirst({
+    where: {
+      userId,
+      role: { in: ['host', 'accepted'] },
+      ...(excludeRoundId ? { roundId: { not: excludeRoundId } } : {}),
+      round: { date, teeTime, status: { not: 'cancelled' } },
+    },
+    select: { roundId: true },
+  })
+  return clash != null
+}
 
 // ── GET /rounds ────────────────────────────────────────────────────────────────
 
@@ -175,6 +200,11 @@ rounds.post('/', authMiddleware, zValidator('json', createRoundSchema), async (c
   const teeTimeDate = new Date('1970-01-01T00:00:00.000Z')
   teeTimeDate.setUTCHours(hh, mm, 0, 0)
 
+  // No double-booking: the host can't tee off in two places at once.
+  if (await hasTimeConflict(userId, new Date(body.date), teeTimeDate)) {
+    return c.json({ error: '你在同一時段已有其他球局，無法重複安排' }, 409)
+  }
+
   const data = await prisma.round.create({
     data: {
       hostUserId: userId,
@@ -227,6 +257,12 @@ rounds.post('/:id/join', authMiddleware, async (c) => {
   const taken = round.participants.filter((p) => p.role === 'host' || p.role === 'accepted').length
   if (taken >= round.totalSpots) return c.json({ error: '此球局已額滿' }, 400)
 
+  // No double-booking: block joining when the player already holds a spot in
+  // another active round at the same date + tee time.
+  if (await hasTimeConflict(userId, round.date, round.teeTime, roundId)) {
+    return c.json({ error: '你在同一時段已有其他球局，無法重複報名' }, 409)
+  }
+
   // Free join: players go straight in as 'accepted' (no host approval). A prior
   // request/decline for the same person is upgraded rather than duplicated.
   if (existing) {
@@ -252,6 +288,30 @@ rounds.post('/:id/join', authMiddleware, async (c) => {
     body: `${joiner?.displayName ?? '有人'} 加入了你在 ${course?.name ?? '你的球場'} 的球局`,
     targetType: 'round',
     targetId: roundId,
+  })
+
+  return c.json({ ok: true })
+})
+
+// ── POST /rounds/:id/leave (back out within the grace window) ────────────────────
+
+rounds.post('/:id/leave', authMiddleware, async (c) => {
+  const { sub: userId } = c.get('user')
+  const roundId = c.req.param('id')
+
+  const participant = await prisma.roundParticipant.findUnique({
+    where: { roundId_userId: { roundId, userId } },
+  })
+  if (!participant) return c.json({ error: '你不在此球局中' }, 404)
+  if (participant.role === 'host') {
+    return c.json({ error: '主辦者無法退出，請改為取消球局' }, 400)
+  }
+  if (Date.now() - participant.joinedAt.getTime() > BACKOUT_WINDOW_MS) {
+    return c.json({ error: '已超過退出時限（僅限加入後一分鐘內）' }, 403)
+  }
+
+  await prisma.roundParticipant.delete({
+    where: { roundId_userId: { roundId, userId } },
   })
 
   return c.json({ ok: true })
