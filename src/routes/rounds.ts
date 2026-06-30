@@ -212,29 +212,44 @@ rounds.post('/:id/join', authMiddleware, async (c) => {
   const { sub: userId } = c.get('user')
   const roundId = c.req.param('id')
 
-  const round = await prisma.round.findUnique({ where: { id: roundId } })
+  const round = await prisma.round.findUnique({
+    where: { id: roundId },
+    include: { participants: { select: { userId: true, role: true } } },
+  })
   if (!round) return c.json({ error: '找不到球局' }, 404)
   if (round.status !== 'open') return c.json({ error: '此球局目前不開放加入' }, 400)
 
-  const existing = await prisma.roundParticipant.findUnique({
-    where: { roundId_userId: { roundId, userId } },
-  })
-  if (existing) return c.json({ error: '你已經是參與者' }, 400)
+  const existing = round.participants.find((p) => p.userId === userId)
+  if (existing && (existing.role === 'host' || existing.role === 'accepted')) {
+    return c.json({ error: '你已經是參與者' }, 400)
+  }
 
-  await prisma.roundParticipant.create({
-    data: { roundId, userId, role: 'requested' },
-  })
+  const taken = round.participants.filter((p) => p.role === 'host' || p.role === 'accepted').length
+  if (taken >= round.totalSpots) return c.json({ error: '此球局已額滿' }, 400)
 
-  // Notify the host of the new request.
+  // Free join: players go straight in as 'accepted' (no host approval). A prior
+  // request/decline for the same person is upgraded rather than duplicated.
+  if (existing) {
+    await prisma.roundParticipant.update({
+      where: { roundId_userId: { roundId, userId } },
+      data: { role: 'accepted' },
+    })
+  } else {
+    await prisma.roundParticipant.create({
+      data: { roundId, userId, role: 'accepted' },
+    })
+  }
+
+  // Let the host know a new player joined (round_accepted opens the round detail).
   const [joiner, course] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } }),
     prisma.course.findUnique({ where: { id: round.courseId }, select: { name: true } }),
   ])
   await createNotification({
     userId: round.hostUserId,
-    type: 'round_request',
-    title: '新的加入申請',
-    body: `${joiner?.displayName ?? '有人'} 申請加入你在 ${course?.name ?? '你的球場'} 的球局`,
+    type: 'round_accepted',
+    title: '有新球友加入',
+    body: `${joiner?.displayName ?? '有人'} 加入了你在 ${course?.name ?? '你的球場'} 的球局`,
     targetType: 'round',
     targetId: roundId,
   })
