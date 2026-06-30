@@ -201,4 +201,41 @@ communities.post('/:id/leave', authMiddleware, async (c) => {
   return c.json({ data })
 })
 
+// ── DELETE /communities/:id/members/:userId (owner removes a member) ──────────────
+
+communities.delete('/:id/members/:userId', authMiddleware, async (c) => {
+  const { sub: actorId } = c.get('user')
+  const id = c.req.param('id')
+  const targetUserId = c.req.param('userId')
+
+  const community = await prisma.community.findUnique({
+    where: { id },
+    select: { id: true, creatorId: true, deletedAt: true },
+  })
+  if (!community || community.deletedAt) return c.json({ error: '找不到球隊' }, 404)
+  // Only the owner (creator) may remove members.
+  if (community.creatorId !== actorId) {
+    return c.json({ error: '只有球隊擁有者可以移除成員' }, 403)
+  }
+  // The owner can't remove themselves this way (they'd dissolve the team).
+  if (targetUserId === community.creatorId) {
+    return c.json({ error: '無法移除球隊擁有者' }, 400)
+  }
+
+  const existing = await prisma.communityMember.findUnique({
+    where: { communityId_userId: { communityId: id, userId: targetUserId } },
+  })
+  if (existing && existing.status === 'active') {
+    await prisma.$transaction([
+      prisma.communityMember.delete({
+        where: { communityId_userId: { communityId: id, userId: targetUserId } },
+      }),
+      prisma.community.update({ where: { id }, data: { memberCount: { decrement: 1 } } }),
+    ])
+  }
+
+  const data = await loadCommunityDetail(id)
+  return c.json({ data })
+})
+
 export default communities
