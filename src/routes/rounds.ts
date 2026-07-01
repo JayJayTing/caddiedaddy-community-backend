@@ -173,11 +173,11 @@ const createRoundSchema = z.object({
   courseId: z.string().uuid(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   teeTime: z.string().regex(/^\d{2}:\d{2}$/),
-  venueType: z.enum(['course', 'driving_range']),
+  venueType: z.enum(['course', 'driving_range', 'indoor_sim']),
   // Play format is no longer chosen by the host; stored as a default for now.
   format: z.enum(['stroke_play', 'stableford', 'best_ball', 'scramble']).optional(),
-  // Holes only apply to a golf course. Driving ranges omit it (stored as the
-  // 18 default but never shown). Optional here; required for course venues below.
+  // Holes only apply to a golf course. Driving ranges and indoor sims omit it
+  // (stored as the 18 default but never shown). Required for course venues below.
   holes: z.number().int().refine((n) => n === 9 || n === 18).optional(),
   totalSpots: z.number().int().min(2).max(10),
   greenFeeCents: z.number().int().nonnegative().optional(),
@@ -187,11 +187,11 @@ const createRoundSchema = z.object({
   notes: z.string().optional(),
   color1: z.string().optional(),
   color2: z.string().optional(),
-}).refine((d) => d.venueType === 'driving_range' || d.holes != null, {
+}).refine((d) => d.venueType !== 'course' || d.holes != null, {
   message: 'holes is required for a golf course',
   path: ['holes'],
-}).refine((d) => d.totalSpots <= (d.venueType === 'driving_range' ? 10 : 4), {
-  message: 'totalSpots exceeds the venue maximum (4 for a course, 10 for a range)',
+}).refine((d) => d.totalSpots <= (d.venueType === 'course' ? 4 : d.venueType === 'indoor_sim' ? 6 : 10), {
+  message: 'totalSpots exceeds the venue maximum (4 course, 6 indoor sim, 10 range)',
   path: ['totalSpots'],
 })
 
@@ -217,7 +217,7 @@ rounds.post('/', authMiddleware, zValidator('json', createRoundSchema), async (c
       teeTime: teeTimeDate,
       venueType: body.venueType,
       format: body.format ?? 'stroke_play',
-      holes: body.venueType === 'driving_range' ? 18 : body.holes,
+      holes: body.venueType === 'course' ? body.holes : 18,
       totalSpots: body.totalSpots,
       greenFeeCents: body.greenFeeCents,
       handicapRequirement: body.handicapRequirement,

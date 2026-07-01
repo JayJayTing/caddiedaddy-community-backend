@@ -20,6 +20,8 @@ const publicCourseSelect = {
   lng: true,
   coverPhotoUrl: true,
   photos: true,
+  phone: true,
+  website: true,
 } as const
 
 // ── GET /courses ─── approved courses for search + map pins ──────────────────────
@@ -55,11 +57,13 @@ const submitCourseSchema = z.object({
   district: z.string().max(40).optional(),
   city: z.string().max(40).optional(),
   holeCount: z.number().int().min(1).max(36).optional(),
-  venueType: z.enum(['course', 'driving_range']).optional(),
+  venueType: z.enum(['course', 'driving_range', 'indoor_sim']).optional(),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   coverPhotoUrl: z.string().url().optional(),
   photos: z.array(z.string().url()).max(10).optional(),
+  phone: z.string().max(40).optional(),
+  website: z.string().url().optional(),
 })
 
 courses.post('/', authMiddleware, zValidator('json', submitCourseSchema), async (c) => {
@@ -78,6 +82,8 @@ courses.post('/', authMiddleware, zValidator('json', submitCourseSchema), async 
       lng: body.lng,
       coverPhotoUrl: body.coverPhotoUrl,
       photos: body.photos ?? [],
+      phone: body.phone,
+      website: body.website,
       status: 'pending',
       submittedById: userId,
     },
@@ -119,11 +125,13 @@ const moderateCourseSchema = z.object({
   district: z.string().max(40).nullable().optional(),
   city: z.string().max(40).nullable().optional(),
   holeCount: z.number().int().min(1).max(36).optional(),
-  venueType: z.enum(['course', 'driving_range']).optional(),
+  venueType: z.enum(['course', 'driving_range', 'indoor_sim']).optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   coverPhotoUrl: z.string().url().nullable().optional(),
   photos: z.array(z.string().url()).max(10).optional(),
+  phone: z.string().max(40).nullable().optional(),
+  website: z.string().url().nullable().optional(),
   rejectionReason: z.string().max(500).nullable().optional(),
 })
 
@@ -139,6 +147,8 @@ const moderatableFields = [
   'lng',
   'coverPhotoUrl',
   'photos',
+  'phone',
+  'website',
   'rejectionReason',
 ] as const
 

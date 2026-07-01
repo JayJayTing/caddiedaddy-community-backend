@@ -55,6 +55,8 @@ async function main() {
       holeCount: v.holeCount,
       venueType: v.venueType as VenueType,
       coverPhotoUrl: v.coverPhotoUrl,
+      phone: v.phone || null,
+      website: v.website || null,
       status: CourseStatus.approved,
     }
     await prisma.course.upsert({ where: { id }, create: { id, ...data }, update: data })
