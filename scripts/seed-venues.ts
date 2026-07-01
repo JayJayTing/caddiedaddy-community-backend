@@ -37,6 +37,14 @@ interface SeedVenue {
   phone: string; website: string; coordSource: string
 }
 
+// Some source rows append notes/reservation lines to the phone ("03-… ; reservation …").
+// Keep just the primary number — cleaner to display and safely under the column cap.
+function cleanPhone(raw: string | undefined | null): string | null {
+  if (!raw) return null
+  const primary = raw.split(/[;(]/)[0].trim()
+  return primary ? primary.slice(0, 40) : null
+}
+
 async function main() {
   const file = join(process.cwd(), 'scripts', 'data', 'taipei-venues.json')
   const venues: SeedVenue[] = JSON.parse(readFileSync(file, 'utf8'))
@@ -55,7 +63,7 @@ async function main() {
       holeCount: v.holeCount,
       venueType: v.venueType as VenueType,
       coverPhotoUrl: v.coverPhotoUrl,
-      phone: v.phone || null,
+      phone: cleanPhone(v.phone),
       website: v.website || null,
       status: CourseStatus.approved,
     }
