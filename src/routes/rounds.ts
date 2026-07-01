@@ -20,6 +20,7 @@ const courseSelect = {
   id: true,
   name: true,
   locationText: true,
+  coverPhotoUrl: true,
   lat: true,
   lng: true,
 } as const
