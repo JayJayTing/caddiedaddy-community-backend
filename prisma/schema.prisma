@@ -349,6 +349,8 @@ model Course {
   status          CourseStatus @default(approved)
   coverPhotoUrl   String?      @map("cover_photo_url")
   photos          String[]     @default([])
+  phone           String?      @db.VarChar(40)
+  website         String?
   submittedById   String?      @map("submitted_by_id") @db.Uuid
   submittedBy     User?        @relation("CourseSubmitter", fields: [submittedById], references: [id])
   reviewedAt      DateTime?    @map("reviewed_at") @db.Timestamptz
