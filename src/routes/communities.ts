@@ -89,6 +89,18 @@ communities.get('/:id', async (c) => {
 
 // ── POST /communities ──────────────────────────────────────────────────────────
 
+// How many communities a free user may create. Kept in one place (env-overridable)
+// so tuning it is a one-liner. A future premium tier will raise this — see
+// communityCreationLimit() below.
+const FREE_COMMUNITY_LIMIT = Number(process.env.COMMUNITY_LIMIT_FREE ?? 2)
+
+// The community-creation cap for a given user. Everyone is on the free tier today;
+// when premium ships, branch on the user's plan here (e.g. return Infinity / a
+// higher number for subscribers) and this is the only spot that has to change.
+function communityCreationLimit(_userId: string): number {
+  return FREE_COMMUNITY_LIMIT
+}
+
 const createCommunitySchema = z.object({
   name: z.string().min(1).max(80),
   type: z.enum(['mixed', 'mens_club', 'ladies_club', 'corporate', 'beginner']),
@@ -102,6 +114,17 @@ const createCommunitySchema = z.object({
 communities.post('/', authMiddleware, zValidator('json', createCommunitySchema), async (c) => {
   const { sub: userId } = c.get('user')
   const body = c.req.valid('json')
+
+  // Enforce the per-user creation cap. Count only live communities the user still
+  // owns (soft-deleted ones free up a slot). Source of truth for the limit — the
+  // frontend gates the UI too, but this is what actually protects the data.
+  const limit = communityCreationLimit(userId)
+  const owned = await prisma.community.count({
+    where: { creatorId: userId, deletedAt: null },
+  })
+  if (owned >= limit) {
+    return c.json({ error: `每位用戶最多只能建立 ${limit} 個社群` }, 403)
+  }
 
   const data = await prisma.community.create({
     data: {
