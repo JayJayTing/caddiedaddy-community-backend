@@ -24,6 +24,7 @@ enum AuthMethod {
 enum VenueType {
   course
   driving_range
+  indoor_sim
 }
 
 // Moderation lifecycle for user-submitted golf locations (community-sourced
